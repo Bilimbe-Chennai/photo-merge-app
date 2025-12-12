@@ -1,4 +1,9 @@
 {
   "name": "PhotoMergeApp",
-  "displayName": "PhotoMergeApp"
+  "displayName": "PhotoMergeApp",
+  "extra": {
+    "eas": {
+      "projectId": "24da2747-24d2-405a-b552-ba9e1549dbfa"
+    }
+  }
 }
