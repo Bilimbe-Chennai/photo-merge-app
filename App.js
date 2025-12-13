@@ -1,30 +1,12 @@
 import React from 'react';
 import { SafeAreaView, StyleSheet, Text, View, StatusBar, Button } from 'react-native';
-
+import ClientPageUser from './src/screens/ClientPageUser'
 const App = () => {
   return (
     <>
       <StatusBar barStyle="dark-content" />
       <SafeAreaView style={styles.container}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Photo Merge App</Text>
-          <Text style={styles.subtitle}>Welcome to React Native!</Text>
-          
-          <View style={styles.buttonContainer}>
-            <Button 
-              title="Start Merging Photos" 
-              onPress={() => console.log('Button pressed')}
-              color="#007AFF"
-            />
-          </View>
-          
-          <View style={styles.features}>
-            <Text style={styles.feature}>✓ Android Support</Text>
-            <Text style={styles.feature}>✓ iOS Support (via Expo)</Text>
-            <Text style={styles.feature}>✓ Photo Merging</Text>
-            <Text style={styles.feature}>✓ Gallery Access</Text>
-          </View>
-        </View>
+       <ClientPageUser></ClientPageUser>
       </SafeAreaView>
     </>
   );
