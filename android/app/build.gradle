@@ -111,6 +111,15 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
     }
+     applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def appName = "PhotoMergeApp"
+            def buildType = variant.buildType.name
+            def versionName = variant.versionName ?: "1.0"
+
+            outputFileName = "${appName}-${buildType}-v${versionName}.apk"
+        }
+    }
 }
 
 dependencies {

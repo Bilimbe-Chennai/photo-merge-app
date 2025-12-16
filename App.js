@@ -1,13 +1,16 @@
 import React from 'react';
-import { SafeAreaView, StyleSheet, Text, View, StatusBar, Button } from 'react-native';
+import { StyleSheet, Text, View, StatusBar, Button } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ClientPageUser from './src/screens/ClientPageUser'
 const App = () => {
   return (
     <>
       <StatusBar barStyle="dark-content" />
+        <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
        <ClientPageUser></ClientPageUser>
       </SafeAreaView>
+      </SafeAreaProvider>
     </>
   );
 };
