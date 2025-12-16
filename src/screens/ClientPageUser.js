@@ -288,7 +288,7 @@ export default function ClientPageUser() {
 // STYLES
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5", padding: 16 },
-  title: { fontSize: 26, fontWeight: "800", color: "#b71c1c", marginBottom: 15,marginTop:30,textAlign:"center" },
+  title: { fontSize: 26, fontWeight: "800", color: "#b71c1c", marginBottom: 15,textAlign:"center" },
 
   card: {
     backgroundColor: "white",
