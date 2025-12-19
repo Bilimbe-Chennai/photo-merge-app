@@ -192,7 +192,7 @@
 
 
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Alert, StyleSheet, Text, TouchableOpacity, Image } from 'react-native';
+import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import CameraView from '../components/CameraView';
 import TemplateOverlay from '../components/TemplateOverlay';
@@ -201,6 +201,9 @@ import { mergeCameraWithTemplate } from '../services/ImageMergeService';
 import { saveToGallery } from '../services/GalleryService';
 import { TEMPLATES } from '../constants/templates';
 import CaptureButton from '../components/CaptureButton';
+import NetInfo from '@react-native-community/netinfo';
+import { processQueue } from '../services/OfflineUploadQueue';
+import { uploadWithOfflineQueue } from '../services/ApiUploadService';
 
 export default function CameraScreen() {
   const cameraRef = useRef(null);
@@ -218,6 +221,12 @@ export default function CameraScreen() {
   const [previewLoaded, setPreviewLoaded] = useState(false);
   const previewLoadResolver = React.useRef(null);
   const [diagVariants, setDiagVariants] = useState(false); // developer diagnostic: save alternative variants
+  const [finalImageUri, setFinalImageUri] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+
+
 
   useEffect(() => {
     // reset overlay measurements when camera switches
@@ -259,10 +268,9 @@ export default function CameraScreen() {
         setPreviewImageUri(null);
         setIsCapturingPreview(false);
         setPreviewLoaded(false);
-
-        // Save the captured view-shot
-        await saveToGallery(captured);
-        Alert.alert('Success', 'Photo saved to gallery (exact preview).');
+        // Show captured preview and wait for user confirmation to save
+        setFinalImageUri(captured);
+        setShowPreview(true);
         return;
       }
 
@@ -330,12 +338,29 @@ export default function CameraScreen() {
         previewCapturePath
       );
 
-      await saveToGallery(`file://${mergedPath}`);
-      Alert.alert('Success', 'Photo saved with template');
+      // Defer saving: show preview and let user confirm (tick) to save/upload
+      setFinalImageUri(`file://${mergedPath}`);
+      setShowPreview(true);
     } catch (e) {
       console.log(e);
       Alert.alert('Error', e.message);
     }
+  };
+  const uploadToApi = async (uri) => {
+    const formData = new FormData();
+    formData.append('image', {
+      uri,
+      type: 'image/jpeg',
+      name: 'photo.jpg',
+    });
+
+    await fetch('https://your-api-url.com/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
   };
 
   const onCapture = () => {
@@ -408,8 +433,8 @@ export default function CameraScreen() {
             )}
 
             {/* Template overlay on top of preview */}
-            <TemplateOverlay 
-              template={template.src} 
+            <TemplateOverlay
+              template={template.src}
               onLayoutOverlay={(layout) => { console.log('ONLAYOUT OVERLAY:', layout); setOverlayLayout(layout); }}
               absolute
             />
@@ -459,8 +484,8 @@ export default function CameraScreen() {
         )}
 
         {/* Template overlay for UI preview */}
-        <TemplateOverlay 
-          template={template.src} 
+        <TemplateOverlay
+          template={template.src}
           onLayoutOverlay={(layout) => setOverlayLayout(layout)}
           absolute
         />
@@ -468,10 +493,41 @@ export default function CameraScreen() {
     );
   };
 
+  const handleConfirmSave = async () => {
+    try {
+      setIsSaving(true);
+
+      // 1️⃣ Save locally
+      await saveToGallery(finalImageUri);
+
+      // 2️⃣ Try API upload
+      await uploadWithOfflineQueue(finalImageUri);
+
+      Alert.alert('Success', 'Photo saved successfully');
+    } catch (e) {
+      Alert.alert('Saved', 'Photo saved locally. Will upload when online.');
+    } finally {
+      setIsSaving(false);
+      setShowPreview(false);
+      setFinalImageUri(null);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      if (state.isConnected) {
+        processQueue();
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+
   return (
     <View style={styles.container}>
       {/* Main camera/preview area */}
-      <View 
+      <View
         style={styles.cameraContainer}
         onLayout={(e) => setContainerLayout(e.nativeEvent.layout)}
       >
@@ -480,16 +536,16 @@ export default function CameraScreen() {
         {/* Top controls */}
         <View style={styles.topControls} pointerEvents="box-none">
           <View style={styles.controlsRow}>
-            <TouchableOpacity 
-              style={styles.button} 
+            <TouchableOpacity
+              style={styles.button}
               onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
             >
               <Text style={styles.buttonText}>
                 {timerSec === 0 ? 'Timer: Off' : `Timer: ${timerSec}s`}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.button} 
+            <TouchableOpacity
+              style={styles.button}
               onPress={() => setCameraPosition((p) => (p === 'front' ? 'back' : 'front'))}
             >
               <Text style={styles.buttonText}>
@@ -526,17 +582,54 @@ export default function CameraScreen() {
       </View>
 
       {/* Template slider at bottom */}
-      <TemplateSlider 
-        templates={TEMPLATES} 
-        onSelect={setTemplate} 
+      <TemplateSlider
+        templates={TEMPLATES}
+        onSelect={setTemplate}
       />
 
       {/* Capture button */}
-      <CaptureButton 
-        onPress={onCapture} 
+      <CaptureButton
+        onPress={onCapture}
         disabled={!cameraReady}
       />
+      {showPreview && finalImageUri && (
+        <View style={styles.previewOverlay}>
+          <Image source={{ uri: finalImageUri }} style={styles.previewImage} />
+
+          <View style={styles.previewActions}>
+            {/* CLOSE */}
+            <TouchableOpacity
+              style={[styles.previewBtn, styles.closeBtn]}
+              onPress={() => {
+                setShowPreview(false);
+                setFinalImageUri(null);
+              }}
+            >
+              <Text style={styles.btnText}>✕</Text>
+            </TouchableOpacity>
+
+            {/* TICK */}
+            <TouchableOpacity
+              disabled={isSaving}
+              style={[
+                styles.previewBtn,
+                styles.tickBtn,
+                isSaving && { opacity: 0.6 }
+              ]}
+              onPress={handleConfirmSave}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="large" color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>✓</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
     </View>
+
   );
 }
 
@@ -589,4 +682,46 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  previewOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+    zIndex: 50,
+  },
+
+  previewImage: {
+    flex: 1,
+    resizeMode: 'contain',
+  },
+
+  previewActions: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+
+  previewBtn: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  closeBtn: {
+    backgroundColor: '#ff3b30',
+  },
+
+  tickBtn: {
+    backgroundColor: '#4cd964',
+  },
+
+  btnText: {
+    fontSize: 32,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+
 });

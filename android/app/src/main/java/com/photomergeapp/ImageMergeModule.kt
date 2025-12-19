@@ -289,6 +289,9 @@ class ImageMergeModule(
       val outW = templateBitmap.width
       val outH = templateBitmap.height
 
+      // Predeclare resultBitmap so both render branches can assign to it
+      var resultBitmap: Bitmap? = null
+
       // Map overlay rect (container pixels) into template pixel coordinates so the output size matches template layout
       try {
         if (overlay != null && overlay.hasKey("containerWidth") && overlay.hasKey("containerHeight")) {
@@ -353,12 +356,13 @@ class ImageMergeModule(
         hiCanvas.drawBitmap(photoBitmap, drawMatrix, qualityPaint)
         hiCanvas.drawBitmap(templateBitmap, 0f, 0f, qualityPaint)
 
+
         // Downscale to final size (filtered)
         val finalBmp = Bitmap.createScaledBitmap(hiBmp, outW, outH, true)
         if (!hiBmp.isRecycled) hiBmp.recycle()
 
-        // Use finalBmp as result
-        val resultBitmap = finalBmp
+        // Assign to predeclared result
+        resultBitmap = finalBmp
 
         Log.d("ImageMerge", "Rendered hi-res ${hiW}x${hiH} and downscaled to ${outW}x${outH}")
 
@@ -366,8 +370,8 @@ class ImageMergeModule(
         
         // Draw diagnostic variant using resultBitmap dimensions if needed later
       } else {
-        val resultBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(resultBitmap)
+        val rb = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(rb)
 
         // Draw the photo to the result canvas using 'cover' scaling so it fills the template area
         try {
@@ -397,6 +401,8 @@ class ImageMergeModule(
         } catch (e: Exception) {
           Log.w("ImageMerge", "Failed to draw template onto output canvas: ${e.message}")
         }
+
+        resultBitmap = rb
       }
 
       val file = File(
@@ -408,18 +414,12 @@ class ImageMergeModule(
       // Use PNG if the template contains alpha (preserve crisp edges), otherwise JPEG at max quality
       val usedFormat = if (templateBitmap.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
       val quality = if (usedFormat == Bitmap.CompressFormat.JPEG) 100 else 100
-      resultBitmap.compress(usedFormat, quality, out)
+      resultBitmap?.compress(usedFormat, quality, out)
       out.flush()
       out.close()
 
-      MediaStore.Images.Media.insertImage(
-        context.contentResolver,
-        file.absolutePath,
-        file.name,
-        "Merged Photo"
-      )
-
-      Log.d("ImageMerge", "SAVED: ${file.absolutePath}")
+      // Do NOT insert into MediaStore here; return cached file path to JS so the app can save on confirm
+      Log.d("ImageMerge", "SAVED (cached): ${file.absolutePath}")
 
       // If requested, also write a diagnostic rotated-180 variant so we can compare
       if (overlay != null && overlay.hasKey("saveVariants") && overlay.getBoolean("saveVariants")) {
@@ -449,8 +449,7 @@ class ImageMergeModule(
           altOut.flush()
           altOut.close()
 
-          MediaStore.Images.Media.insertImage(context.contentResolver, altFile.absolutePath, altFile.name, "Merged Photo Variant")
-          Log.d("ImageMerge", "VARIANT_SAVED: ${altFile.absolutePath}")
+          Log.d("ImageMerge", "VARIANT_SAVED (cached): ${altFile.absolutePath}")
         } catch (e: Exception) {
           Log.w("ImageMerge", "Failed to write variant: ${e.message}")
         }
