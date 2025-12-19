@@ -14,17 +14,8 @@ const CameraView = forwardRef(({ template, onReady, cameraPosition = 'front' }, 
       device={device}
       isActive={true}
       photo={true}
-      // NOTE: removed `snapshot` prop — some devices/Camera2 configurations
-      // throw `session/invalid-output-configuration` when snapshot is present
       onInitialized={onReady}
-    >
-      {/* TEMPLATE DRAWN INSIDE CAMERA SURFACE */}
-      <Image
-        source={template}
-        style={StyleSheet.absoluteFill}
-        resizeMode="contain"
-      />
-    </Camera>
+    />
   );
 });
 

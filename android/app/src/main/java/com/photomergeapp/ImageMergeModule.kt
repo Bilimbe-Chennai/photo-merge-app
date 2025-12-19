@@ -15,6 +15,7 @@ import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.io.File
 import java.io.FileOutputStream
+import android.os.Build
 
 class ImageMergeModule(
   private val context: ReactApplicationContext
@@ -71,7 +72,12 @@ class ImageMergeModule(
           else -> {}
         }
 
-        canvas.drawBitmap(b, m, null)
+        // Use filtered paint for better resampling quality when rotating/mirroring/scaling
+        val p = Paint()
+        p.isFilterBitmap = true
+        p.isAntiAlias = true
+
+        canvas.drawBitmap(b, m, p)
         return outBmp
       }
 
@@ -98,6 +104,90 @@ class ImageMergeModule(
           sum += (dr * dr + dg * dg + db * db).toDouble()
         }
         return sum / size
+      }
+
+      // Progressive multi-step downscale: halves repeatedly (with filtering) for better perceived sharpness
+      fun progressiveDownscale(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+        var cur = src
+        val orig = src
+        while (cur.width / 2 >= targetW && cur.height / 2 >= targetH) {
+          val nw = maxOf(targetW, cur.width / 2)
+          val nh = maxOf(targetH, cur.height / 2)
+          val tmp = Bitmap.createScaledBitmap(cur, nw, nh, true)
+          if (cur !== orig && !cur.isRecycled) cur.recycle()
+          cur = tmp
+        }
+
+        if (cur.width != targetW || cur.height != targetH) {
+          val finalBmp = Bitmap.createScaledBitmap(cur, targetW, targetH, true)
+          if (cur !== orig && !cur.isRecycled) cur.recycle()
+          if (finalBmp !== orig && !orig.isRecycled) orig.recycle()
+          return finalBmp
+        }
+
+        // If cur is different from the original source, recycle original to free memory
+        if (cur !== orig && !orig.isRecycled) orig.recycle()
+        return cur
+      }
+
+      // Simple 3x3 sharpen filter to increase perceived sharpness after resampling
+      // Reduced strength: center weight lowered and blended with original to soften effect
+      fun applySharpen(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        val inPixels = IntArray(w * h)
+        val outPixels = IntArray(w * h)
+        src.getPixels(inPixels, 0, w, 0, 0, w, h)
+
+        // softened kernel: [0 -1 0; -1 4 -1; 0 -1 0] and final blend (sharpenAlpha)
+        val sharpenAlpha = 0.6f // blend factor: 0.0 => original, 1.0 => full sharpen
+
+        for (y in 0 until h) {
+          for (x in 0 until w) {
+            var rSum = 0
+            var gSum = 0
+            var bSum = 0
+            val center = inPixels[y * w + x]
+            val origR = (center shr 16) and 0xff
+            val origG = (center shr 8) and 0xff
+            val origB = center and 0xff
+            var aCenter = (center ushr 24) and 0xff
+
+            // center *4 (reduced)
+            rSum += (origR * 4)
+            gSum += (origG * 4)
+            bSum += (origB * 4)
+
+            // neighbors (-1 weight)
+            val pairs = arrayOf(intArrayOf(-1, 0), intArrayOf(1, 0), intArrayOf(0, -1), intArrayOf(0, 1))
+            for (p in pairs) {
+              val nx = x + p[0]
+              val ny = y + p[1]
+              if (nx in 0 until w && ny in 0 until h) {
+                val v = inPixels[ny * w + nx]
+                rSum -= (v shr 16) and 0xff
+                gSum -= (v shr 8) and 0xff
+                bSum -= v and 0xff
+              }
+            }
+
+            val rSharp = rSum.coerceIn(0, 255)
+            val gSharp = gSum.coerceIn(0, 255)
+            val bSharp = bSum.coerceIn(0, 255)
+
+            // Blend sharpened value with original to soften result
+            val rFinal = ((rSharp * sharpenAlpha) + (origR * (1 - sharpenAlpha))).toInt().coerceIn(0, 255)
+            val gFinal = ((gSharp * sharpenAlpha) + (origG * (1 - sharpenAlpha))).toInt().coerceIn(0, 255)
+            val bFinal = ((bSharp * sharpenAlpha) + (origB * (1 - sharpenAlpha))).toInt().coerceIn(0, 255)
+
+            outPixels[y * w + x] = (aCenter shl 24) or (rFinal shl 16) or (gFinal shl 8) or bFinal
+          }
+        }
+
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(outPixels, 0, w, 0, 0, w, h)
+        Log.d("ImageMerge", "applySharpen: reduced strength applied (alpha=$sharpenAlpha)")
+        return out
       }
 
       try {
@@ -220,14 +310,18 @@ class ImageMergeModule(
 
                   val mergedCandidate = Bitmap.createBitmap(previewW, previewH, Bitmap.Config.ARGB_8888)
                   val cc = Canvas(mergedCandidate)
-                  cc.drawBitmap(cand, 0f, 0f, null)
+                  // Use filtered paint for candidate composition to better match final render
+                  val candidatePaint = Paint()
+                  candidatePaint.isFilterBitmap = true
+                  candidatePaint.isAntiAlias = true
+                  cc.drawBitmap(cand, 0f, 0f, candidatePaint)
                   if (overlayWScaled > 0 && overlayHScaled > 0) {
                     val scaledTemplate = Bitmap.createScaledBitmap(templateBitmap, overlayWScaled, overlayHScaled, true)
-                    cc.drawBitmap(scaledTemplate, overlayXScaled.toFloat(), overlayYScaled.toFloat(), Paint())
+                    cc.drawBitmap(scaledTemplate, overlayXScaled.toFloat(), overlayYScaled.toFloat(), candidatePaint)
                     scaledTemplate.recycle()
                   } else {
                     val scaledTemplate = Bitmap.createScaledBitmap(templateBitmap, previewW, previewH, true)
-                    cc.drawBitmap(scaledTemplate, 0f, 0f, Paint())
+                    cc.drawBitmap(scaledTemplate, 0f, 0f, candidatePaint)
                     scaledTemplate.recycle()
                   }
 
@@ -325,13 +419,14 @@ class ImageMergeModule(
         Log.w("ImageMerge", "Failed to map overlay into template pixels: ${e.message}")
       }
 
-      // Choose a render upscaling factor for higher-quality resampling when templates are not huge
-      val renderScale = if (outW < 1600 && outH < 1600) 2 else 1
+      // Legacy behavior: use template-size rendering (no hi-res upscaling / progressive downscale / sharpen)
+      // This matches the previous output that you preferred — set renderScale to 1 to force the simple path.
+      val renderScale = 1
+      Log.d("ImageMerge", "Using legacy render pipeline (renderScale=1)")
       val qualityPaint = Paint()
       qualityPaint.isFilterBitmap = true
       qualityPaint.isAntiAlias = true
 
-      var resultBitmap: Bitmap? = null
       if (renderScale > 1) {
         val hiW = outW * renderScale
         val hiH = outH * renderScale
@@ -358,12 +453,16 @@ class ImageMergeModule(
         hiCanvas.drawBitmap(templateBitmap, 0f, 0f, qualityPaint)
 
 
-        // Downscale to final size (filtered)
-        val finalBmp = Bitmap.createScaledBitmap(hiBmp, outW, outH, true)
-        if (!hiBmp.isRecycled) hiBmp.recycle()
+        // Downscale to final size using progressive multistep downscale for higher quality
+        val finalBmp = progressiveDownscale(hiBmp, outW, outH)
+        if (!hiBmp.isRecycled && finalBmp !== hiBmp) hiBmp.recycle()
 
-        // Use finalBmp as result
-        val resultBitmap = finalBmp
+        // Apply a small sharpen filter to restore perceived edge contrast after resampling
+        val sharpened = applySharpen(finalBmp)
+        if (sharpened !== finalBmp && !finalBmp.isRecycled) finalBmp.recycle()
+
+        // Assign to predeclared result
+        resultBitmap = sharpened
 
         Log.d("ImageMerge", "Rendered hi-res ${hiW}x${hiH} and downscaled to ${outW}x${outH}")
 
@@ -371,10 +470,10 @@ class ImageMergeModule(
         
         // Draw diagnostic variant using resultBitmap dimensions if needed later
       } else {
-        val resultBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(resultBitmap)
+        // Legacy exact-draw behavior: no filter/antialiasing for pixel-accurate draw
+        val rb = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(rb)
 
-        // Draw the photo to the result canvas using 'cover' scaling so it fills the template area
         try {
           val pw = photoBitmap.width.toFloat()
           val ph = photoBitmap.height.toFloat()
@@ -388,17 +487,23 @@ class ImageMergeModule(
           drawMatrix.postScale(scale, scale)
           drawMatrix.postTranslate(dx, dy)
 
-          canvas.drawBitmap(photoBitmap, drawMatrix, qualityPaint)
-          Log.d("ImageMerge", "Drew photo onto canvas (template-size): ${outW}x${outH} scale=$scale scaled=${scaledWidth}x${scaledHeight} dx=$dx dy=$dy")
+          // Use null paint to avoid any bitmap filtering or anti-aliasing — this matches the old output
+          canvas.drawBitmap(photoBitmap, drawMatrix, null)
+          Log.d("ImageMerge", "Drew photo (legacy) onto canvas (template-size): ${outW}x${outH} scale=$scale scaled=${scaledWidth}x${scaledHeight} dx=$dx dy=$dy")
         } catch (e: Exception) {
           Log.w("ImageMerge", "Failed to draw scaled photo onto template-size canvas: ${e.message}")
-          // fallback: draw unscaled photo at 0,0
-          canvas.drawBitmap(photoBitmap, 0f, 0f, qualityPaint)
+          canvas.drawBitmap(photoBitmap, 0f, 0f, null)
         }
 
-        // Draw the template to cover the entire output (templateBitmap is already intrinsic size)
+        // Draw the template onto the output without filtering to preserve exact pixels
         try {
-          canvas.drawBitmap(templateBitmap, 0f, 0f, qualityPaint)
+          if (overlayW > 0 && overlayH > 0) {
+            val scaledTemplate = Bitmap.createScaledBitmap(templateBitmap, overlayW, overlayH, false)
+            canvas.drawBitmap(scaledTemplate, overlayX.toFloat(), overlayY.toFloat(), null)
+            scaledTemplate.recycle()
+          } else {
+            canvas.drawBitmap(templateBitmap, 0f, 0f, null)
+          }
         } catch (e: Exception) {
           Log.w("ImageMerge", "Failed to draw template onto output canvas: ${e.message}")
         }
@@ -406,18 +511,23 @@ class ImageMergeModule(
         resultBitmap = rb
       }
 
+      if (resultBitmap == null) throw Exception("Rendering failed: result bitmap is null")
+
+      // Legacy output: always use PNG to match previous exports
+      val extension = "png"
       val file = File(
         context.cacheDir,
-        "merged_${System.currentTimeMillis()}.jpg"
+        "merged_${System.currentTimeMillis()}.${extension}"
       )
 
       val out = FileOutputStream(file)
-      // Use PNG if the template contains alpha (preserve crisp edges), otherwise JPEG at max quality
-      val usedFormat = if (templateBitmap.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
-      val quality = if (usedFormat == Bitmap.CompressFormat.JPEG) 100 else 100
-      resultBitmap.compress(usedFormat, quality, out)
+      val usedFormat = Bitmap.CompressFormat.PNG
+      val quality = 100
+      resultBitmap!!.compress(usedFormat, quality, out)
       out.flush()
       out.close()
+
+      Log.d("ImageMerge", "Saved (legacy PNG): ${file.absolutePath}")
 
       // Do NOT insert into MediaStore here; return cached file path to JS so the app can save on confirm
       Log.d("ImageMerge", "SAVED (cached): ${file.absolutePath}")
@@ -444,9 +554,11 @@ class ImageMergeModule(
             altCanvas.drawBitmap(scaledTemplateAlt, 0f, 0f, qualityPaintVariant)
           }
 
-          val altFile = File(context.cacheDir, "merged_variant_${System.currentTimeMillis()}.jpg")
+          val altExt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) "webp" else "png"
+          val altFile = File(context.cacheDir, "merged_variant_${System.currentTimeMillis()}.${altExt}")
           val altOut = FileOutputStream(altFile)
-          altResult.compress(Bitmap.CompressFormat.JPEG, 100, altOut)
+          val altFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.PNG
+          altResult.compress(altFormat, 100, altOut)
           altOut.flush()
           altOut.close()
 

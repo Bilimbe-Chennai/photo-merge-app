@@ -192,7 +192,7 @@
 
 
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import CameraView from '../components/CameraView';
 import TemplateOverlay from '../components/TemplateOverlay';
@@ -204,6 +204,7 @@ import CaptureButton from '../components/CaptureButton';
 import NetInfo from '@react-native-community/netinfo';
 import { processQueue } from '../services/OfflineUploadQueue';
 import { uploadWithOfflineQueue } from '../services/ApiUploadService';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 export default function CameraScreen() {
   const cameraRef = useRef(null);
@@ -215,7 +216,7 @@ export default function CameraScreen() {
   const [countdown, setCountdown] = useState(0);
   const [containerLayout, setContainerLayout] = useState(null);
   const [overlayLayout, setOverlayLayout] = useState(null);
-  const [matchPreview, setMatchPreview] = useState(false);
+
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
   const [previewImageUri, setPreviewImageUri] = useState(null);
   const [previewLoaded, setPreviewLoaded] = useState(false);
@@ -224,6 +225,12 @@ export default function CameraScreen() {
   const [finalImageUri, setFinalImageUri] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Dev-only debug panel: shows payload passed to native merge (overlay + preview path)
+  const [debugPanelVisible, setDebugPanelVisible] = useState(false);
+  const [debugPayload, setDebugPayload] = useState(null);
+
+
 
 
 
@@ -241,38 +248,6 @@ export default function CameraScreen() {
       // Always take a full-resolution photo first
       const photo = await cameraRef.current.takePhoto({ qualityPrioritization: 'quality' });
 
-      // If Exact Preview mode requested, render the captured photo into the view and save that view-shot
-      if (matchPreview) {
-        setIsCapturingPreview(true);
-        setPreviewLoaded(false);
-        setPreviewImageUri(`file://${photo.path}`);
-
-        // Wait for the preview Image to load (or timeout) so the captured view-shot contains the photo
-        const loaded = await new Promise(resolve => {
-          previewLoadResolver.current = resolve;
-          // safety timeout
-          setTimeout(() => {
-            if (previewLoadResolver.current) {
-              previewLoadResolver.current(false);
-              previewLoadResolver.current = null;
-            }
-          }, 900);
-        });
-
-        if (!loaded) console.log('Warning: preview image did not finish loading before capture (timeout)');
-
-        // Capture the composed view (exact preview capture)
-        const captured = await viewShotRef.current.capture();
-
-        // Cleanup
-        setPreviewImageUri(null);
-        setIsCapturingPreview(false);
-        setPreviewLoaded(false);
-        // Show captured preview and wait for user confirmation to save
-        setFinalImageUri(captured);
-        setShowPreview(true);
-        return;
-      }
 
       // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
       let previewCapturePath = null;
@@ -330,6 +305,16 @@ export default function CameraScreen() {
       console.log('FINAL TEMPLATE ID:', template.id);
       console.log('OVERLAY RECT:', overlayRect);
 
+      // Debug: capture the exact payload we'll pass to native so devs can inspect/copy it
+      if (__DEV__) {
+        setDebugPayload({
+          photoPath: photo.path,
+          templateId: template.id,
+          overlay: overlayRect,
+          previewPath: previewCapturePath,
+        });
+      }
+
       const mergedPath = await mergeCameraWithTemplate(
         photo.path,
         template.id,
@@ -383,7 +368,7 @@ export default function CameraScreen() {
   };
 
   const renderCameraContent = () => {
-    if ((matchPreview || isCapturingPreview) && previewImageUri) {
+    if (isCapturingPreview && previewImageUri) {
       return (
         <ViewShot
           ref={viewShotRef}
@@ -535,30 +520,9 @@ export default function CameraScreen() {
         {/* Top controls */}
         <View style={styles.topControls} pointerEvents="box-none">
           <View style={styles.controlsRow}>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
-            >
-              <Text style={styles.buttonText}>
-                {timerSec === 0 ? 'Timer: Off' : `Timer: ${timerSec}s`}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => setCameraPosition((p) => (p === 'front' ? 'back' : 'front'))}
-            >
-              <Text style={styles.buttonText}>
-                {cameraPosition === 'front' ? 'Front' : 'Back'}
-              </Text>
-            </TouchableOpacity>
-            {/* <TouchableOpacity 
-              style={[styles.button, matchPreview && styles.activeButton]} 
-              onPress={() => setMatchPreview((v) => !v)}
-            >
-              <Text style={styles.buttonText}>
-                {matchPreview ? '✓ Preview' : 'Preview'}
-              </Text>
-            </TouchableOpacity> */}
+
+
+
 
             {/* Diagnostic toggle: save variant images for debugging orientation/mapping */}
             {/* <TouchableOpacity
@@ -566,7 +530,7 @@ export default function CameraScreen() {
               onPress={() => setDiagVariants((v) => !v)}
             >
               <Text style={styles.buttonText}>{diagVariants ? 'Diag: On' : 'Diag'}</Text>
-            </TouchableOpacity> */}
+            </TouchableOpacity> */} 
 
 
           </View>
@@ -578,6 +542,29 @@ export default function CameraScreen() {
             <Text style={styles.countdownText}>{countdown}</Text>
           </View>
         )}
+
+        {/* Dev-only debug panel: shows last payload passed to native */}
+        {/* {__DEV__ && debugPanelVisible && debugPayload && (
+          <View style={styles.debugPanel}>
+            <ScrollView style={{ flex: 1, padding: 8 }}>
+              <Text style={styles.debugText}>{JSON.stringify(debugPayload, null, 2)}</Text>
+            </ScrollView>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-around', padding: 8 }}>
+              <TouchableOpacity
+                style={[styles.button, { paddingHorizontal: 16 }]}
+                onPress={() => console.log('DEBUG PAYLOAD:', debugPayload)}
+              >
+                <Text style={styles.buttonText}>Log</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.button, { paddingHorizontal: 16 }]}
+                onPress={() => { setDebugPanelVisible(false); setDebugPayload(null); }}
+              >
+                <Text style={styles.buttonText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}  */}
       </View>
 
       {/* Template slider at bottom */}
@@ -587,10 +574,29 @@ export default function CameraScreen() {
       />
 
       {/* Capture button */}
-      <CaptureButton
-        onPress={onCapture}
-        disabled={!cameraReady}
-      />
+      <View style={styles.bottomControls}>
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
+        >
+          <View style={{ alignItems: 'center' }}>
+            <MaterialIcons  name="timer" size={22} color="#fff" />
+            {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
+          </View>
+        </TouchableOpacity>
+
+        <CaptureButton
+          onPress={onCapture}
+          disabled={!cameraReady}
+        />
+
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => setCameraPosition((p) => (p === 'front' ? 'back' : 'front'))}
+        >
+          <MaterialIcons  name="flip-camera-android" size={24} color="#fff" />
+        </TouchableOpacity>
+      </View>
       {showPreview && finalImageUri && (
         <View style={styles.previewOverlay}>
           <Image source={{ uri: finalImageUri }} style={styles.previewImage} />
@@ -721,6 +727,56 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: '#fff',
     fontWeight: 'bold',
+  },
+
+  // Bottom control row (capture + icons)
+  bottomControls: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    zIndex: 40,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+
+  iconButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  iconText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+
+  iconSubText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  debugPanel: {
+    position: 'absolute',
+    bottom: 16,
+    left: 12,
+    right: 12,
+    height: 180,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderRadius: 8,
+    zIndex: 60,
+    overflow: 'hidden',
+  },
+  debugText: {
+    color: '#fff',
+    fontSize: 12,
   },
 
 });

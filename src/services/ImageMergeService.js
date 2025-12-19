@@ -26,17 +26,12 @@ export const mergeCameraWithTemplate = async (photoPath, template, overlayNormal
     }
   }
 
-  // Pass normalized overlay rect (or null) to native; native will map it to photo pixels
+  // Pass normalized overlay rect and optional preview path (use null if absent) to native; native will map overlay to photo pixels
   try {
-    // Try calling the newer native signature that accepts overlay and previewPath
-    return await ImageMerge.merge(photoPath, assetName, overlayNormalized, previewPath);
+    return await ImageMerge.merge(photoPath, assetName, overlayNormalized ?? null, previewPath ?? null);
   } catch (err) {
-    // Fallback for older native code that expects fewer args
-    try {
-      return await ImageMerge.merge(photoPath, assetName, overlayNormalized);
-    } catch (err2) {
-      console.warn('ImageMerge.merge with overlay failed, falling back to legacy call:', err2.message || err2);
-      return await ImageMerge.merge(photoPath, assetName);
-    }
+    // Log and rethrow so callers can handle the error (no legacy fallbacks — native expects 4 args)
+    console.error('ImageMerge.merge failed:', err && err.message ? err.message : err);
+    throw err;
   }
 };

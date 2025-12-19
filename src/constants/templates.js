@@ -1,8 +1,9 @@
 export const TEMPLATES = [
-    { id: 'template1.png', src: require('../assets/template1.png') },
-  { id: 'template3.png', src: require('../assets/template3.png') },
-  { id: 'template4.png', src: require('../assets/template4.png') },
-  { id: 'template5.png', src: require('../assets/template5.png') },
-  { id: 'template6.png', src: require('../assets/template6.png') },
-  { id: 'template7.png', src: require('../assets/template7.png') },
+    //{ id: 'template1.png', src: require('../assets/template1.png') },
+  { id: 'template8.png', src: require('../assets/template8.png') },
+  { id: 'template9.png', src: require('../assets/template9.png') },
+  { id: 'template10.png', src: require('../assets/template10.png') },
+  { id: 'template11.png', src: require('../assets/template11.png') },
+  { id: 'template12.png', src: require('../assets/template12.png') },
+  { id: 'template13.png', src: require('../assets/template13.png') },
 ];
