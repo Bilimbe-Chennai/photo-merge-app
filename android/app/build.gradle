@@ -126,6 +126,9 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
+    // EXIF helper for reading rotation/orientation from images
+    implementation("androidx.exifinterface:exifinterface:1.3.6")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

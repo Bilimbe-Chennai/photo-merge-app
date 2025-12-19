@@ -1,0 +1,42 @@
+import { NativeModules, Image } from 'react-native';
+
+const { ImageMerge } = NativeModules;
+
+export const mergeCameraWithTemplate = async (photoPath, template, overlayNormalized = null, previewPath = null) => {
+  // Support either a numeric require() result (Android asset id) or a filename id like 'template3.png'
+  let assetName = '';
+
+  if (typeof template === 'number') {
+    // require('../assets/foo.png') returns a number on Android — use that numeric id as the asset filename
+    assetName = `${template}.png`;
+  } else {
+    const s = String(template || '');
+
+    if (s.startsWith('asset_')) {
+      // old RN string form like 'asset_8'
+      const digits = s.replace('asset_', '').replace(/\D/g, '');
+      assetName = `${digits}.png`;
+    } else if (s.startsWith('asset:/')) {
+      // uri form like 'asset:/3' or 'asset:/3.png'
+      const match = s.match(/\/([^\/]+)$/);
+      assetName = match ? match[1] : s;
+    } else {
+      // already a filename (e.g. 'template3.png') — keep as-is
+      assetName = s;
+    }
+  }
+
+  // Pass normalized overlay rect (or null) to native; native will map it to photo pixels
+  try {
+    // Try calling the newer native signature that accepts overlay and previewPath
+    return await ImageMerge.merge(photoPath, assetName, overlayNormalized, previewPath);
+  } catch (err) {
+    // Fallback for older native code that expects fewer args
+    try {
+      return await ImageMerge.merge(photoPath, assetName, overlayNormalized);
+    } catch (err2) {
+      console.warn('ImageMerge.merge with overlay failed, falling back to legacy call:', err2.message || err2);
+      return await ImageMerge.merge(photoPath, assetName);
+    }
+  }
+};

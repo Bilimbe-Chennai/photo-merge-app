@@ -10,12 +10,12 @@ import {
   Alert,
 } from "react-native";
 import { launchCamera, launchImageLibrary } from "react-native-image-picker";
-const template1 = require("../images/template1.jpg");
-const template2 = require("../images/template2.png");
-const template3 = require("../images/template3.png");
-const template4 = require("../images/template4.png");
-const template5 = require("../images/template5.png");
-const template6 = require("../images/template6.png");
+// const template1 = require("../assets/template1.jpg");
+const template2 = require("../assets/template2.png");
+const template3 = require("../assets/template3.png");
+const template4 = require("../assets/template4.png");
+const template5 = require("../assets/template5.png");
+const template6 = require("../assets/template6.png");
 import { PermissionsAndroid } from "react-native";
 
 
@@ -24,7 +24,7 @@ export default function ClientPageUser() {
   {
     id: 1,
     name: "Professional Red",
-    image: template1,
+    // image: template1,
     photoArea: {
       top: "0%",
       left: "0%",

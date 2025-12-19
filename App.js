@@ -57,7 +57,7 @@
 //                 resizeMode="contain"
 //               />
 //             </Animated.View>
-            
+
 //             <Animated.Text style={[styles.splashTitle, { opacity: fadeAnim }]}>
 //              Photo Merge
 //             </Animated.Text>
@@ -142,11 +142,22 @@ import LinearGradient from 'react-native-linear-gradient';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import ClientPageUser from './src/screens/ClientPageUser';
 
+
+import { NavigationContainer } from "@react-navigation/native";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+
+import LoginScreen from "./src/screens/LoginScreen";
+import CameraScreen from "./src/screens/CameraScreen";
+import PreviewScreen from "./src/screens/PreviewScreen";
+
+const Stack = createNativeStackNavigator();
+
+
 const { width, height } = Dimensions.get('window');
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.5)).current;
@@ -154,7 +165,7 @@ const App = () => {
   const textFade = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
   const shimmerAnim = useRef(new Animated.Value(0)).current;
-  
+
   // Shimmer animation
   const startShimmerAnimation = () => {
     Animated.loop(
@@ -201,14 +212,14 @@ const App = () => {
           useNativeDriver: true,
         }),
       ]),
-      
+
       // Text fade in
       Animated.timing(textFade, {
         toValue: 1,
         duration: 600,
         useNativeDriver: true,
       }),
-      
+
       // Progress animation
       Animated.timing(progressAnim, {
         toValue: 1,
@@ -261,7 +272,7 @@ const App = () => {
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
           />
-          
+
           {/* Shimmer effect */}
           {/* <Animated.View
             style={[
@@ -290,14 +301,14 @@ const App = () => {
               <View style={styles.logoContainer}>
                 {/* Logo shadow/glow */}
                 <View style={styles.logoGlow} />
-                
+
                 {/* Logo image */}
                 <Image
                   source={require('./src/assets/icon.png')}
                   style={styles.logo}
                   resizeMode="contain"
                 />
-                
+
                 {/* Logo border accent */}
                 <View style={styles.logoBorder} />
               </View>
@@ -351,7 +362,14 @@ const App = () => {
       <StatusBar barStyle="dark-content" />
       <SafeAreaProvider>
         <SafeAreaView style={styles.mainContainer}>
-          <ClientPageUser />
+          {/* <ClientPageUser /> */}
+          <NavigationContainer>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Login" component={LoginScreen} />
+              <Stack.Screen name="Camera" component={CameraScreen} />
+              <Stack.Screen name="Preview" component={PreviewScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
         </SafeAreaView>
       </SafeAreaProvider>
     </>
@@ -439,7 +457,7 @@ const styles = StyleSheet.create({
   progressWrapper: {
     width: '70%',
     //marginBottom: 40,
-    alignItems:"center"
+    alignItems: "center"
   },
   progressTrack: {
     width: '70%',
@@ -447,7 +465,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 1.5,
     overflow: 'hidden',
-    textAlign:"center"
+    textAlign: "center"
     //marginBottom: 12,
   },
   progressBar: {
