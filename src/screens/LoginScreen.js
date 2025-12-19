@@ -5,7 +5,6 @@ import {
     TextInput,
     TouchableOpacity,
     StyleSheet,
-    SafeAreaView,
     KeyboardAvoidingView,
     Platform,
     TouchableWithoutFeedback,
@@ -13,6 +12,7 @@ import {
     ScrollView,
     Image,
 } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen({ navigation }) {
     const [name, setName] = useState("dhivya");

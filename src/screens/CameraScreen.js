@@ -320,7 +320,6 @@ export default function CameraScreen() {
           height: overlayLayout.height,
           containerWidth: containerLayout.width,
           containerHeight: containerLayout.height,
-          mirror: cameraPosition === 'front',
         };
 
         if (diagVariants) {

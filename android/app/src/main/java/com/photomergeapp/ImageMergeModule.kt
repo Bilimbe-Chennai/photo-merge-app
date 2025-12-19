@@ -331,6 +331,7 @@ class ImageMergeModule(
       qualityPaint.isFilterBitmap = true
       qualityPaint.isAntiAlias = true
 
+      var resultBitmap: Bitmap? = null
       if (renderScale > 1) {
         val hiW = outW * renderScale
         val hiH = outH * renderScale
@@ -361,8 +362,8 @@ class ImageMergeModule(
         val finalBmp = Bitmap.createScaledBitmap(hiBmp, outW, outH, true)
         if (!hiBmp.isRecycled) hiBmp.recycle()
 
-        // Assign to predeclared result
-        resultBitmap = finalBmp
+        // Use finalBmp as result
+        val resultBitmap = finalBmp
 
         Log.d("ImageMerge", "Rendered hi-res ${hiW}x${hiH} and downscaled to ${outW}x${outH}")
 
@@ -370,8 +371,8 @@ class ImageMergeModule(
         
         // Draw diagnostic variant using resultBitmap dimensions if needed later
       } else {
-        val rb = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(rb)
+        val resultBitmap = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(resultBitmap)
 
         // Draw the photo to the result canvas using 'cover' scaling so it fills the template area
         try {
@@ -414,7 +415,7 @@ class ImageMergeModule(
       // Use PNG if the template contains alpha (preserve crisp edges), otherwise JPEG at max quality
       val usedFormat = if (templateBitmap.hasAlpha()) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG
       val quality = if (usedFormat == Bitmap.CompressFormat.JPEG) 100 else 100
-      resultBitmap?.compress(usedFormat, quality, out)
+      resultBitmap.compress(usedFormat, quality, out)
       out.flush()
       out.close()
 
