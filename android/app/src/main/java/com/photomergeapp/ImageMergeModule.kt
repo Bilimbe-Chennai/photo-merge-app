@@ -419,10 +419,9 @@ class ImageMergeModule(
         Log.w("ImageMerge", "Failed to map overlay into template pixels: ${e.message}")
       }
 
-      // Legacy behavior: use template-size rendering (no hi-res upscaling / progressive downscale / sharpen)
-      // This matches the previous output that you preferred — set renderScale to 1 to force the simple path.
-      val renderScale = 1
-      Log.d("ImageMerge", "Using legacy render pipeline (renderScale=1)")
+      // Use high-quality rendering pipeline (upscale -> draw -> progressive downscale -> sharpen)
+      val renderScale = 2
+      Log.d("ImageMerge", "Using high-quality render pipeline (renderScale=2)")
       val qualityPaint = Paint()
       qualityPaint.isFilterBitmap = true
       qualityPaint.isAntiAlias = true
@@ -458,11 +457,11 @@ class ImageMergeModule(
         if (!hiBmp.isRecycled && finalBmp !== hiBmp) hiBmp.recycle()
 
         // Apply a small sharpen filter to restore perceived edge contrast after resampling
-        val sharpened = applySharpen(finalBmp)
-        if (sharpened !== finalBmp && !finalBmp.isRecycled) finalBmp.recycle()
+        // val sharpened = applySharpen(finalBmp)
+        // if (sharpened !== finalBmp && !finalBmp.isRecycled) finalBmp.recycle()
 
         // Assign to predeclared result
-        resultBitmap = sharpened
+        resultBitmap = finalBmp // sharpened
 
         Log.d("ImageMerge", "Rendered hi-res ${hiW}x${hiH} and downscaled to ${outW}x${outH}")
 

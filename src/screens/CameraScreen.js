@@ -186,13 +186,11 @@
 //   center: {
 //     flex: 1,
 //     justifyContent: "center",
-//     alignItems: "center",
 //   },
 // });
 
-
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions, Image, Modal, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import CameraView from '../components/CameraView';
 import TemplateOverlay from '../components/TemplateOverlay';
@@ -204,9 +202,10 @@ import CaptureButton from '../components/CaptureButton';
 import NetInfo from '@react-native-community/netinfo';
 import { processQueue } from '../services/OfflineUploadQueue';
 import { uploadWithOfflineQueue } from '../services/ApiUploadService';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 
-export default function CameraScreen() {
+
+export default function CameraScreen({ navigation, route }) {
   const cameraRef = useRef(null);
   const viewShotRef = useRef(null);
   const [template, setTemplate] = useState(TEMPLATES[0]);
@@ -216,6 +215,9 @@ export default function CameraScreen() {
   const [countdown, setCountdown] = useState(0);
   const [containerLayout, setContainerLayout] = useState(null);
   const [overlayLayout, setOverlayLayout] = useState(null);
+
+  // Extract user details passed from LoginScreen
+  const user = route?.params?.user || {};
 
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
   const [previewImageUri, setPreviewImageUri] = useState(null);
@@ -235,18 +237,21 @@ export default function CameraScreen() {
 
 
 
+  const [processing, setProcessing] = useState(false);
+
   useEffect(() => {
     // reset overlay measurements when camera switches
     setOverlayLayout(null);
   }, [cameraPosition]);
 
   const performCapture = async () => {
-    if (!cameraReady) return;
+    if (!cameraReady || processing) return;
+    setProcessing(true);
     console.log('TEMPLATE OBJECT:', template, 'cameraPosition=', cameraPosition);
 
     try {
-      // Always take a full-resolution photo first
-      const photo = await cameraRef.current.takePhoto({ qualityPrioritization: 'quality' });
+      // 1. Take a full-resolution photo (4:3)
+      const photo = await cameraRef.current.takePhoto();
 
 
       // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
@@ -269,7 +274,7 @@ export default function CameraScreen() {
             }, 900);
           });
 
-          if (!loaded) console.log('Warning: preview image did not finish loading before capture (timeout)');
+          if (!loaded) console.log('Warning: preview image timeout');
 
           previewCapturePath = await viewShotRef.current.capture({ format: 'jpg', quality: 0.6 });
           // Cleanup
@@ -328,6 +333,8 @@ export default function CameraScreen() {
     } catch (e) {
       console.log(e);
       Alert.alert('Error', e.message);
+    } finally {
+      setProcessing(false);
     }
   };
   const uploadToApi = async (uri) => {
@@ -368,58 +375,28 @@ export default function CameraScreen() {
   };
 
   const renderCameraContent = () => {
+    // 1. If capturing front-camera preview (ViewShot hack)
     if (isCapturingPreview && previewImageUri) {
       return (
-        <ViewShot
-          ref={viewShotRef}
-          style={{ flex: 1 }}
-          options={{ format: 'jpg', quality: 1 }}
-        >
+        <ViewShot ref={viewShotRef} style={{ flex: 1 }} options={{ format: 'jpg', quality: 1 }}>
           <View style={{ flex: 1 }}>
-            {/* Preview image with the same dimensions as camera */}
-            {overlayLayout ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  left: overlayLayout.x,
-                  top: overlayLayout.y,
-                  width: overlayLayout.width,
-                  height: overlayLayout.height,
-                  overflow: 'hidden',
-                }}
-              >
-                <Image
-                  source={{ uri: previewImageUri }}
-                  style={[{ width: '100%', height: '100%' }, cameraPosition === 'front' ? { transform: [{ scaleX: -1 }] } : null]}
-                  resizeMode="cover"
-                  onLoad={() => {
-                    setPreviewLoaded(true);
-                    if (previewLoadResolver.current) {
-                      previewLoadResolver.current(true);
-                      previewLoadResolver.current = null;
-                    }
-                  }}
-                />
-              </View>
-            ) : (
-              <Image
-                source={{ uri: previewImageUri }}
-                style={[{ flex: 1 }, cameraPosition === 'front' ? { transform: [{ scaleX: -1 }] } : null]}
-                resizeMode="cover"
-                onLoad={() => {
-                  setPreviewLoaded(true);
-                  if (previewLoadResolver.current) {
-                    previewLoadResolver.current(true);
-                    previewLoadResolver.current = null;
-                  }
-                }}
-              />
-            )}
-
-            {/* Template overlay on top of preview */}
+            {/* The image of the person needs to cover the same 3:4 area as the camera */}
+            <Image
+              source={{ uri: previewImageUri }}
+              style={[{ flex: 1 }, cameraPosition === 'front' ? { transform: [{ scaleX: -1 }] } : null]}
+              resizeMode="cover"
+              onLoad={() => {
+                setPreviewLoaded(true);
+                if (previewLoadResolver.current) {
+                  previewLoadResolver.current(true);
+                  previewLoadResolver.current = null;
+                }
+              }}
+            />
+            {/* Template on top */}
             <TemplateOverlay
               template={template.src}
-              onLayoutOverlay={(layout) => { console.log('ONLAYOUT OVERLAY:', layout); setOverlayLayout(layout); }}
+              onLayoutOverlay={(layout) => setOverlayLayout(layout)}
               absolute
             />
           </View>
@@ -427,47 +404,16 @@ export default function CameraScreen() {
       );
     }
 
-    // Regular camera view (not capturing preview)
+    // 2. Regular Camera Mode (Matched to 3:4)
+    // We render the Camera at the FULL size of the container, and place the Template Overlay on top.
+    // This ensures the camera engine uses the full sensor/preview resolution.
     return (
-      <View style={{ flex: 1 }}>
-        {overlayLayout ? (
-          <View
-            style={{
-              position: 'absolute',
-              left: overlayLayout.x,
-              top: overlayLayout.y,
-              width: overlayLayout.width,
-              height: overlayLayout.height,
-              overflow: 'hidden',
-            }}
-          >
-            <CameraView
-              ref={cameraRef}
-              cameraPosition={cameraPosition}
-              template={template.src}
-              style={{ flex: 1 }}
-              showTemplate={false}
-              onReady={() => {
-                console.log('Camera ready');
-                setCameraReady(true);
-              }}
-            />
-          </View>
-        ) : (
-          <View style={{ flex: 1 }}>
-            <CameraView
-              ref={cameraRef}
-              cameraPosition={cameraPosition}
-              template={template.src}
-              onReady={() => {
-                console.log('Camera ready');
-                setCameraReady(true);
-              }}
-            />
-          </View>
-        )}
-
-        {/* Template overlay for UI preview */}
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <CameraView
+          ref={cameraRef}
+          cameraPosition={cameraPosition}
+          onReady={() => setCameraReady(true)}
+        />
         <TemplateOverlay
           template={template.src}
           onLayoutOverlay={(layout) => setOverlayLayout(layout)}
@@ -480,6 +426,12 @@ export default function CameraScreen() {
   const handleConfirmSave = async () => {
     try {
       setIsSaving(true);
+
+      console.log('SAVING PHOTO:', {
+        user,
+        template: template.name,
+        uri: finalImageUri
+      });
 
       // 1️⃣ Save locally
       await saveToGallery(finalImageUri);
@@ -510,31 +462,29 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Main camera/preview area */}
+      {/* Top Bar */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          style={styles.topIconBtn}
+          onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
+        >
+          <View style={{ position: 'relative' }}>
+            <Icon name="timer" size={28} color="#fff" />
+            {timerSec !== 0 && (
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerBadgeText}>{timerSec}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Main camera/preview area - 3:4 Aspect Ratio */}
       <View
         style={styles.cameraContainer}
         onLayout={(e) => setContainerLayout(e.nativeEvent.layout)}
       >
         {renderCameraContent()}
-
-        {/* Top controls */}
-        <View style={styles.topControls} pointerEvents="box-none">
-          <View style={styles.controlsRow}>
-
-
-
-
-            {/* Diagnostic toggle: save variant images for debugging orientation/mapping */}
-            {/* <TouchableOpacity
-              style={[styles.button, diagVariants && styles.activeButton]}
-              onPress={() => setDiagVariants((v) => !v)}
-            >
-              <Text style={styles.buttonText}>{diagVariants ? 'Diag: On' : 'Diag'}</Text>
-            </TouchableOpacity> */} 
-
-
-          </View>
-        </View>
 
         {/* Countdown overlay */}
         {countdown > 0 && (
@@ -542,145 +492,153 @@ export default function CameraScreen() {
             <Text style={styles.countdownText}>{countdown}</Text>
           </View>
         )}
-
-        {/* Dev-only debug panel: shows last payload passed to native */}
-        {/* {__DEV__ && debugPanelVisible && debugPayload && (
-          <View style={styles.debugPanel}>
-            <ScrollView style={{ flex: 1, padding: 8 }}>
-              <Text style={styles.debugText}>{JSON.stringify(debugPayload, null, 2)}</Text>
-            </ScrollView>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', padding: 8 }}>
-              <TouchableOpacity
-                style={[styles.button, { paddingHorizontal: 16 }]}
-                onPress={() => console.log('DEBUG PAYLOAD:', debugPayload)}
-              >
-                <Text style={styles.buttonText}>Log</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, { paddingHorizontal: 16 }]}
-                onPress={() => { setDebugPanelVisible(false); setDebugPayload(null); }}
-              >
-                <Text style={styles.buttonText}>Close</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}  */}
       </View>
 
-      {/* Template slider at bottom */}
-      <TemplateSlider
-        templates={TEMPLATES}
-        onSelect={setTemplate}
-      />
-
-      {/* Capture button */}
-      <View style={styles.bottomControls}>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
-        >
-          <View style={{ alignItems: 'center' }}>
-            <MaterialIcons  name="timer" size={22} color="#fff" />
-            {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
-          </View>
-        </TouchableOpacity>
-
-        <CaptureButton
-          onPress={onCapture}
-          disabled={!cameraReady}
+      {/* Template slider area */}
+      <View style={styles.sliderContainer}>
+        <TemplateSlider
+          templates={TEMPLATES}
+          onSelect={setTemplate}
         />
+      </View>
+
+      {/* Bottom Controls */}
+      <View style={styles.bottomControls}>
+        <TouchableOpacity style={styles.sideButton} onPress={() => Alert.alert('Gallery', 'Opening Gallery...')}>
+          <Icon name="photo-library" size={32} color="#fff" />
+        </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => setCameraPosition((p) => (p === 'front' ? 'back' : 'front'))}
+          style={styles.captureBtnWrapper}
+          onPress={onCapture}
+          disabled={processing || !cameraReady}
         >
-          <MaterialIcons  name="flip-camera-android" size={24} color="#fff" />
+          <View style={styles.captureBtnOuter}>
+            <View style={styles.captureBtnInner} />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.sideButton}
+          onPress={() => setCameraPosition(prev => prev === 'front' ? 'back' : 'front')}
+        >
+          <Icon name="cached" size={32} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {/* Final Preview Overlay */}
       {showPreview && finalImageUri && (
         <View style={styles.previewOverlay}>
-          <Image source={{ uri: finalImageUri }} style={styles.previewImage} />
-
+          <Image source={{ uri: finalImageUri }} style={styles.fullPreviewImage} resizeMode="contain" />
           <View style={styles.previewActions}>
-            {/* CLOSE */}
-            <TouchableOpacity
-              style={[styles.previewBtn, styles.closeBtn]}
-              onPress={() => {
-                setShowPreview(false);
-                setFinalImageUri(null);
-              }}
-            >
-              <Text style={styles.btnText}>✕</Text>
+            <TouchableOpacity style={styles.previewBtn} onPress={() => { setShowPreview(false); setFinalImageUri(null); }}>
+              <Icon name="close" size={30} color="#fff" />
             </TouchableOpacity>
-
-            {/* TICK */}
-            <TouchableOpacity
-              disabled={isSaving}
-              style={[
-                styles.previewBtn,
-                styles.tickBtn,
-                isSaving && { opacity: 0.6 }
-              ]}
-              onPress={handleConfirmSave}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="large" color="#fff" />
-              ) : (
-                <Text style={styles.btnText}>✓</Text>
-              )}
+            <TouchableOpacity style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]} onPress={handleConfirmSave}>
+              {isSaving ? <ActivityIndicator color="#fff" /> : <Icon name="check" size={30} color="#fff" />}
             </TouchableOpacity>
           </View>
         </View>
       )}
 
+      {/* Processing Indicator */}
+      {processing && (
+        <View style={StyleSheet.absoluteFill}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={{ color: 'white', marginTop: 20, fontWeight: 'bold' }}>Enhancing Image...</Text>
+          </View>
+        </View>
+      )}
     </View>
-
   );
 }
+
+const screenWidth = Dimensions.get('window').width;
+const cameraHeight = (screenWidth * 4) / 3;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
+  },
+  topBar: {
+    height: 50,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginVertical: 20,
+  },
+  topIconBtn: {
+    padding: 10,
+  },
+  timerBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timerBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   cameraContainer: {
-    flex: 7,
-    position: 'relative',
+    width: screenWidth,
+    height: cameraHeight,
+    backgroundColor: '#000',
     overflow: 'hidden',
+    position: 'relative',
   },
-  topControls: {
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingHorizontal: 16,
+  sliderContainer: {
+    marginVertical: 10,
+    height: 100,
   },
-  controlsRow: {
+  bottomControls: {
+    flex: 1,
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 8,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingBottom: 30,
   },
-  button: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+  sideButton: {
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  activeButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  captureBtnWrapper: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+  captureBtnOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 4,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  captureBtnInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#fff',
   },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   countdownText: {
     fontSize: 120,
@@ -690,93 +648,25 @@ const styles = StyleSheet.create({
   previewOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
-    zIndex: 50,
+    zIndex: 100,
   },
-
-  previewImage: {
+  fullPreviewImage: {
     flex: 1,
-    resizeMode: 'contain',
   },
-
   previewActions: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
+    height: 120,
     flexDirection: 'row',
     justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingBottom: 20,
   },
-
   previewBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#333',
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  closeBtn: {
-    backgroundColor: '#ff3b30',
-  },
-
-  tickBtn: {
-    backgroundColor: '#4cd964',
-  },
-
-  btnText: {
-    fontSize: 32,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-
-  // Bottom control row (capture + icons)
-  bottomControls: {
-    position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
-    zIndex: 40,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-
-  iconButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  iconText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-
-  iconSubText: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 2,
-  },
-
-  debugPanel: {
-    position: 'absolute',
-    bottom: 16,
-    left: 12,
-    right: 12,
-    height: 180,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderRadius: 8,
-    zIndex: 60,
-    overflow: 'hidden',
-  },
-  debugText: {
-    color: '#fff',
-    fontSize: 12,
-  },
-
 });
