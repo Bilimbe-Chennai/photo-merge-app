@@ -17,9 +17,8 @@ export default function CaptureButton({ onPress }) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    position: 'absolute',
-    bottom: 15,
-    alignSelf: 'center',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   outerCircle: {
     width: 78,

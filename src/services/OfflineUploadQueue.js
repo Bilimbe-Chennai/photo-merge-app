@@ -11,8 +11,12 @@ export const addToQueue = async (item) => {
 };
 
 export const processQueue = async () => {
-  const isOnline = (await NetInfo.fetch()).isConnected;
-  if (!isOnline) return;
+  // Check detailed network state and ensure we have wifi/ethernet/cellular
+  const state = await NetInfo.fetch();
+  const acceptedTypes = ['wifi', 'ethernet', 'cellular'];
+  const connected = state.isConnected === true && (state.isInternetReachable !== false);
+  const hasAcceptableNetwork = connected && acceptedTypes.includes(state.type);
+  if (!hasAcceptableNetwork) return;
 
   const queue = JSON.parse(await AsyncStorage.getItem(QUEUE_KEY)) || [];
   if (!queue.length) return;
@@ -20,13 +24,16 @@ export const processQueue = async () => {
   const remaining = [];
 
   for (const item of queue) {
-    if (!item || !item.uri) {
+    if (!item || !item) {
       console.warn('OfflineUploadQueue: skipping invalid queue item', item)
       continue
     }
 
     try {
-      await uploadToApi(item.uri)
+      // item expected shape: { uri, userData }
+      const uri = item;
+      const userData = item.userData || {};
+      await uploadToApi(uri, userData);
     } catch (e) {
       console.warn('OfflineUploadQueue: upload failed, keeping item in queue', e.message || e)
       remaining.push(item) // keep failed uploads

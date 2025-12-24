@@ -15,9 +15,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen({ navigation }) {
-    const [name, setName] = useState("dhivya");
-    const [email, setEmail] = useState("dhivya@gmail.com");
-    const [whatsapp, setWhatsapp] = useState("8883571421");
+    const [name, setName] = useState("");
+    const [email, setEmail] = useState("");
+    const [whatsapp, setWhatsapp] = useState("");
 
     const handleContinue = () => {
         Keyboard.dismiss();
@@ -97,6 +97,7 @@ export default function LoginScreen({ navigation }) {
                                 {/* Continue Button */}
                                 <TouchableOpacity
                                     style={styles.btn}
+                                    disabled={!name.trim() || !email.trim() || !whatsapp.trim()}
                                     onPress={handleContinue}
                                     activeOpacity={0.9}
                                 >
