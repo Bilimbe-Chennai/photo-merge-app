@@ -919,6 +919,19 @@ export default function CameraScreen({ navigation, route }) {
     // reset overlay measurements when camera switches
     setOverlayLayout(null);
   }, [cameraPosition]);
+const pickImage = async () => {
+    const result = await launchImageLibrary({
+      mediaType: "photo",
+      quality: 1,
+    });
+
+    if (result.didCancel) return;
+
+    if (result.assets && result.assets.length > 0) {
+      const picked = result.assets[0];
+     //setPhoto(picked.uri);
+    }
+  };
 
   const performCapture = async () => {
     if (!cameraReady || !hasCameraPermission || processing) return;
@@ -1219,11 +1232,10 @@ export default function CameraScreen({ navigation, route }) {
   return (
     <View style={styles.container}>
       {/* Top Bar */}
-      <View style={styles.topBar}>
+      {/* <View style={styles.topBar}>
          {!hasCameraPermission && (
           <View style={styles.topControls} pointerEvents="box-none">
             <View style={styles.topBar}>
-              {/* Add permission refresh button if needed */}
               <TouchableOpacity
                 style={styles.topIconBtn}
                 onPress={checkCameraPermission}
@@ -1248,7 +1260,7 @@ export default function CameraScreen({ navigation, route }) {
             )}
           </View>
         </TouchableOpacity>
-      </View>
+      </View> */}
 
       {/* Main camera/preview area - 3:4 Aspect Ratio */}
       <View
@@ -1285,12 +1297,27 @@ export default function CameraScreen({ navigation, route }) {
               {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
             </View>
           </TouchableOpacity> */}
-          <TouchableOpacity
+            <TouchableOpacity
+          style={styles.sideButton}
+          onPress={() =>
+            setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
+          }
+        >
+          <View style={{ position: 'relative' }}>
+            <Icon name="timer" size={28} color="#fff" />
+            {timerSec !== 0 && (
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerBadgeText}>{timerSec}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+          {/* <TouchableOpacity
             style={styles.sideButton}
-            onPress={() => Alert.alert('Gallery', 'Opening Gallery...')}
+            onPress={() => pickImage()}
           >
             <Icon name="photo-library" size={32} color="#fff" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
             <TouchableOpacity
               style={styles.captureBtnWrapper}
           onPress={onCapture}
@@ -1384,7 +1411,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: 20,
-    marginVertical: 20,
+    
   },
   topIconBtn: {
     padding: 10,
