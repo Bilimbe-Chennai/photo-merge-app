@@ -10,241 +10,255 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     ScrollView,
-    Image,
+    Dimensions,
 } from "react-native";
+import LinearGradient from 'react-native-linear-gradient';
+import Icon from 'react-native-vector-icons/MaterialIcons'; // Using MaterialIcons for check/eye
 import { SafeAreaView } from 'react-native-safe-area-context';
+const { width } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }) {
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [whatsapp, setWhatsapp] = useState("");
-
     const handleContinue = () => {
         Keyboard.dismiss();
-        navigation.navigate("Camera", {
-            user: { name, email, whatsapp },
-        });
+        if (name && email) {
+            navigation.navigate("Camera", {
+                user: { name, email, whatsapp },
+            });
+        }
     };
 
     return (
-        <SafeAreaView style={styles.safeArea}>
-            <KeyboardAvoidingView
-                behavior={Platform.OS === "ios" ? "padding" : "height"}
-                style={styles.keyboardAvoid}
+        <View style={styles.container}>
+            {/* Background Gradient for the whole screen (or just top) */}
+            <LinearGradient
+                colors={['#4a0012', '#9a1b2d', '#c22f42']} // Deep burgundy to red
+                style={styles.gradientBackground}
             >
-                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                    <ScrollView
-                        contentContainerStyle={styles.scrollContainer}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <View style={styles.container}>
-                            {/* Header Section */}
-                            <View style={styles.header}>
-                                <View style={styles.logoContainer}>
-                                    <Text style={styles.logo}>📸</Text>
-                                </View>
-                                <Text style={styles.title}>Welcome</Text>
-                                <Text style={styles.subtitle}>
-                                    Enter your details to continue
-                                </Text>
-                            </View>
+                {/* Decorative Circles */}
+                <View style={[styles.circle, styles.circle1]} />
+                <View style={[styles.circle, styles.circle2]} />
 
-                            {/* Form Section */}
-                            <View style={styles.formContainer}>
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Full Name</Text>
-                                    <TextInput
-                                        placeholder="Enter your name"
-                                        style={styles.input}
-                                        value={name}
-                                        onChangeText={setName}
-                                        placeholderTextColor="#999"
-                                    />
-                                </View>
+                {/* Header Content */}
+                <SafeAreaView style={styles.headerContent}>
+                    <View style={styles.topBar}>
+                        {/* Menu Dots Icon placeholder */}
+                        <Icon name="more-horiz" size={30} color="#fff" style={{ alignSelf: 'flex-end' }} />
+                    </View>
+                    <View style={styles.titleContainer}>
+                        <Text style={styles.titleLine}>Hello</Text>
+                        <Text style={styles.titleLine}>Welcome Back!</Text>
+                    </View>
+                </SafeAreaView>
+            </LinearGradient>
 
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>Email Address</Text>
-                                    <TextInput
-                                        placeholder="Enter your email"
-                                        style={styles.input}
-                                        value={email}
-                                        onChangeText={setEmail}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        placeholderTextColor="#999"
-                                    />
-                                </View>
+            {/* White Form Container */}
+            <View style={styles.formSheet}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    style={{ flex: 1 }}
+                >
+                    <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-                                <View style={styles.inputGroup}>
-                                    <Text style={styles.inputLabel}>WhatsApp Number</Text>
-                                    <TextInput
-                                        placeholder="Enter your WhatsApp number"
-                                        style={styles.input}
-                                        value={whatsapp}
-                                        onChangeText={setWhatsapp}
-                                        keyboardType="phone-pad"
-                                        placeholderTextColor="#999"
-                                    />
-                                </View>
-
-                                {/* Info Note */}
-                                <View style={styles.noteContainer}>
-                                    <Text style={styles.noteText}>
-                                        📱 We'll use this WhatsApp number for notifications
-                                    </Text>
-                                </View>
-
-                                {/* Continue Button */}
-                                <TouchableOpacity
-                                    style={styles.btn}
-                                    disabled={!name.trim() || !email.trim() || !whatsapp.trim()}
-                                    onPress={handleContinue}
-                                    activeOpacity={0.9}
-                                >
-                                    <Text style={styles.btnText}>Continue to Camera</Text>
-                                    <Text style={styles.btnIcon}>→</Text>
-                                </TouchableOpacity>
-
-                                {/* Terms Text */}
-                                {/* <Text style={styles.termsText}>
-                                    By continuing, you agree to our Terms and Privacy Policy
-                                </Text> */}
+                        {/* Name Input */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Name</Text>
+                            <View style={styles.inputWrapper}>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Your Name"
+                                    placeholderTextColor="#ccc"
+                                    value={name}
+                                    onChangeText={setName}
+                                />
+                                {name.length > 2 && (
+                                    <Icon name="check" size={20} color="#28a745" />
+                                )}
                             </View>
                         </View>
+
+                        {/* Email Input */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>Gmail</Text>
+                            <View style={styles.inputWrapper}>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Enter your gmail id"
+                                    placeholderTextColor="#ccc"
+                                    value={email}
+                                    onChangeText={setEmail}
+                                    keyboardType="email-address"
+                                    autoCapitalize="none"
+                                />
+                                {email.includes('@') && (
+                                    <Icon name="check" size={20} color="#28a745" />
+                                )}
+                            </View>
+                        </View>
+
+                        {/* WhatsApp Input */}
+                        <View style={styles.inputGroup}>
+                            <Text style={styles.label}>WhatsApp</Text>
+                            <View style={styles.inputWrapper}>
+                                <TextInput
+                                    style={styles.input}
+                                    placeholder="Enter Whatsapp Number"
+                                    placeholderTextColor="#ccc"
+                                    value={whatsapp}
+                                    onChangeText={setWhatsapp}
+                                    keyboardType="phone-pad"
+                                />
+                                <Icon name="chat" size={20} color="#999" />
+                            </View>
+                        </View>
+
+
+                        {/* Sign In Button */}
+                        <TouchableOpacity onPress={handleContinue} activeOpacity={0.8} style={{ marginTop: 30 }}>
+                            <LinearGradient
+                                colors={['#7f0020', '#b3152c']}
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                                style={styles.btn}
+                                    disabled={!name.trim() || !email.trim() || !whatsapp.trim()}
+                            >
+                                <Text style={styles.btnText}>SUBMIT</Text>
+                            </LinearGradient>
+                        </TouchableOpacity>
+
+                        {/* Footer */}
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>© 2025 PhotoMerge. All rights reserved.</Text>
+                        </View>
                     </ScrollView>
-                </TouchableWithoutFeedback>
-            </KeyboardAvoidingView>
-        </SafeAreaView>
+                </KeyboardAvoidingView>
+            </View>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-        backgroundColor: "#F8FAFC",
-    },
-    keyboardAvoid: {
-        flex: 1,
-    },
-    scrollContainer: {
-        flexGrow: 1,
-    },
     container: {
         flex: 1,
-        paddingHorizontal: 24,
-        paddingTop: 3,
-       paddingBottom: 30,
+        backgroundColor: '#4a0012', // Match top gradient color
     },
-    header: {
-        alignItems: "center",
-        marginBottom: 40,
+    gradientBackground: {
+        height: '40%', // Takes top 40%
+        width: '100%',
+        position: 'relative',
+        justifyContent: 'center',
     },
-    logoContainer: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
-        backgroundColor: "#FFE5E5",
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 5,
+    circle: {
+        position: 'absolute',
+        borderRadius: 999,
+        backgroundColor: 'rgba(0,0,0,0.2)', // Subtle shadow circles
     },
-    logo: {
-        fontSize: 36,
+    circle1: {
+        width: 150,
+        height: 150,
+        top: -30,
+        right: 40,
+        opacity: 0.5,
+        backgroundColor: 'rgba(255,255,255,0.05)',
     },
-    title: {
-        fontSize: 32,
-        fontWeight: "800",
-        color: "#1A1A1A",
-        marginBottom: 8,
-        letterSpacing: -0.5,
+    circle2: {
+        width: 100,
+        height: 100,
+        top: '30%',
+        right: '15%',
+        backgroundColor: 'rgba(0,0,0,0.15)',
     },
-    subtitle: {
-        fontSize: 16,
-        color: "#666",
-        textAlign: "center",
-        lineHeight: 22,
+    headerContent: {
+        flex: 1,
+        paddingHorizontal: 30,
+        paddingTop: 20,
+        justifyContent: 'flex-start',
     },
-    formContainer: {
-        backgroundColor: "#FFFFFF",
-        borderRadius: 24,
-        padding: 24,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.08,
-        shadowRadius: 16,
-        elevation: 8,
+    topBar: {
+        alignItems: 'flex-end',
+        marginBottom: 30,
+        marginTop: Platform.OS === 'android' ? 20 : 0,
+    },
+    titleContainer: {
+        marginTop: 10,
+    },
+    titleLine: {
+        fontSize: 38,
+        fontWeight: 'bold',
+        color: '#fff',
+        lineHeight: 46,
+    },
+    formSheet: {
+        flex: 1,
+        marginTop: -30, // Pull up to overlap gradient
+        backgroundColor: '#fff',
+        borderTopLeftRadius: 35,
+        borderTopRightRadius: 35,
+        paddingHorizontal: 35,
+        paddingTop: 50,
+    },
+    scrollContent: {
+        paddingBottom: 30,
     },
     inputGroup: {
-        marginBottom: 20,
+        marginBottom: 25,
     },
-    inputLabel: {
-        fontSize: 15,
-        fontWeight: "600",
-        color: "#333",
+    label: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#880e25', // Deep red for labels
         marginBottom: 8,
-        paddingLeft: 4,
+    },
+    inputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#ddd',
+        paddingBottom: 8,
     },
     input: {
-        borderWidth: 1.5,
-        borderColor: "#E2E8F0",
-        borderRadius: 16,
-        paddingHorizontal: 18,
-        paddingVertical: 16,
-        fontSize: 16,
-        color: "#1A1A1A",
-        backgroundColor: "#F8FAFC",
+        flex: 1,
+        fontSize: 15,
+        color: '#333',
+        paddingVertical: 5,
     },
-    noteContainer: {
-        backgroundColor: "#F0F9FF",
-        borderRadius: 12,
-        padding: 16,
-        marginTop: 8,
-        marginBottom: 24,
-        borderLeftWidth: 4,
-        borderLeftColor: "#0EA5E9",
-    },
-    noteText: {
-        fontSize: 14,
-        color: "#0369A1",
-        lineHeight: 20,
+    forgotPass: {
+        fontWeight: 'bold',
+        color: '#333',
+        fontSize: 13,
+        textDecorationLine: 'underline',
     },
     btn: {
-        backgroundColor: "#DC2626",
-        borderRadius: 16,
-        paddingVertical: 18,
-        paddingHorizontal: 24,
-        flexDirection: "row",
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: "#DC2626",
-        shadowOffset: { width: 0, height: 6 },
+        width: '100%',
+        height: 55,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: "#7f0020",
+        shadowOffset: { width: 0, height: 5 },
         shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
-        marginBottom: 20,
+        shadowRadius: 10,
+        elevation: 5,
     },
     btnText: {
-        color: "#FFFFFF",
+        color: '#fff',
         fontSize: 18,
-        fontWeight: "700",
-        letterSpacing: 0.5,
+        fontWeight: 'bold',
+        letterSpacing: 1,
     },
-    btnIcon: {
-        color: "#FFFFFF",
-        fontSize: 20,
-        marginLeft: 8,
-        fontWeight: "600",
+    footer: {
+        marginTop: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    termsText: {
+    footerText: {
+        color: '#aaa',
         fontSize: 13,
-        color: "#666",
-        textAlign: "center",
-        lineHeight: 18,
-        paddingHorizontal: 20,
+    },
+    footerLink: {
+        color: '#333',
+        fontWeight: 'bold',
+        fontSize: 13,
     },
 });

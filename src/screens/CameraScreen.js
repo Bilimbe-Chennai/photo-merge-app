@@ -33,7 +33,6 @@
 //   })();
 // }, []);
 
-
 //   if (!hasPermission || !device) {
 //   return null; // or loading view
 // }
@@ -74,7 +73,6 @@
 //           isActive={true}
 //           photo={true}
 //         />
-
 
 //         {/* TEMPLATE OVERLAY */}
 //         <Image
@@ -186,10 +184,8 @@
 //   center: {
 //     flex: 1,
 //     justifyContent: "center",
-//     alignItems: "center",
 //   },
 // });
-
 
 // import React, { useRef, useState, useEffect } from 'react';
 // import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView } from 'react-native';
@@ -231,11 +227,6 @@
 //   // Dev-only debug panel: shows payload passed to native merge (overlay + preview path)
 //   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
 //   const [debugPayload, setDebugPayload] = useState(null);
-
-
-
-
-
 
 //   useEffect(() => {
 //     // reset overlay measurements when camera switches
@@ -328,7 +319,7 @@
 // };
 //       // Defer saving: show preview and let user confirm (tick) to save/upload
 //       setFinalImageUri(`file://${mergedPath}`);
-//       setCapturedPhoto(uploadPhoto); 
+//       setCapturedPhoto(uploadPhoto);
 //       setShowPreview(true);
 //     } catch (e) {
 //       console.log(e);
@@ -503,7 +494,6 @@
 //     return () => unsubscribe();
 //   }, []);
 
-
 //   return (
 //     <View style={styles.container}>
 //       {/* Main camera/preview area */}
@@ -522,7 +512,7 @@
 //               onPress={() => setDiagVariants((v) => !v)}
 //             >
 //               <Text style={styles.buttonText}>{diagVariants ? 'Diag: On' : 'Diag'}</Text>
-//             </TouchableOpacity> */} 
+//             </TouchableOpacity> */}
 //           </View>
 //         </View>
 
@@ -771,7 +761,20 @@
 
 // });
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Alert, StyleSheet, Text, TouchableOpacity, Image, ActivityIndicator, ScrollView, Linking, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+  Image,
+  Modal,
+  Alert,
+  ActivityIndicator,
+  ScrollView,
+  Linking,
+  Platform,
+} from 'react-native';
 import ViewShot from 'react-native-view-shot';
 import { uploadToApi } from '../services/UploadApi';
 import CameraView from '../components/CameraView';
@@ -784,7 +787,7 @@ import CaptureButton from '../components/CaptureButton';
 import NetInfo from '@react-native-community/netinfo';
 import { processQueue } from '../services/OfflineUploadQueue';
 import { uploadWithOfflineQueue } from '../services/ApiUploadService';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import Icon from 'react-native-vector-icons/MaterialIcons';
 import { PERMISSIONS, RESULTS, request, check } from 'react-native-permissions';
 
 // Camera permissions based on platform
@@ -803,6 +806,8 @@ export default function CameraScreen({ navigation, route }) {
   const [countdown, setCountdown] = useState(0);
   const [containerLayout, setContainerLayout] = useState(null);
   const [overlayLayout, setOverlayLayout] = useState(null);
+
+  // Extract user details passed from LoginScreen
   const [isCapturingPreview, setIsCapturingPreview] = useState(false);
   const [previewImageUri, setPreviewImageUri] = useState(null);
   const [previewLoaded, setPreviewLoaded] = useState(false);
@@ -816,8 +821,9 @@ export default function CameraScreen({ navigation, route }) {
   const [isSaving, setIsSaving] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
-  
-  const user = (route && route.params && route.params.user) ? route.params.user : {};
+
+  const user =
+    route && route.params && route.params.user ? route.params.user : {};
   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
   const [debugPayload, setDebugPayload] = useState(null);
 
@@ -830,7 +836,7 @@ export default function CameraScreen({ navigation, route }) {
     try {
       const result = await check(CAMERA_PERMISSION);
       console.log('Camera permission check result:', result);
-      
+
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
       } else if (result === RESULTS.DENIED) {
@@ -855,7 +861,7 @@ export default function CameraScreen({ navigation, route }) {
     try {
       const result = await request(CAMERA_PERMISSION);
       console.log('Camera permission request result:', result);
-      
+
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
       } else if (result === RESULTS.BLOCKED) {
@@ -877,11 +883,11 @@ export default function CameraScreen({ navigation, route }) {
       'Camera permission is required to use this feature. Please enable it in your device settings.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Open Settings', 
-          onPress: () => openAppSettings() 
-        }
-      ]
+        {
+          text: 'Open Settings',
+          onPress: () => openAppSettings(),
+        },
+      ],
     );
   };
 
@@ -890,12 +896,12 @@ export default function CameraScreen({ navigation, route }) {
       'Camera Permission Required',
       'This app needs access to your camera to take photos.',
       [
-        { 
-          text: 'Grant Permission', 
-          onPress: () => requestCameraPermission() 
+        {
+          text: 'Grant Permission',
+          onPress: () => requestCameraPermission(),
         },
-        { text: 'Cancel', style: 'cancel' }
-      ]
+        { text: 'Cancel', style: 'cancel' },
+      ],
     );
   };
 
@@ -907,26 +913,34 @@ export default function CameraScreen({ navigation, route }) {
     }
   };
 
+  const [processing, setProcessing] = useState(false);
+
   useEffect(() => {
     // reset overlay measurements when camera switches
     setOverlayLayout(null);
   }, [cameraPosition]);
 
   const performCapture = async () => {
-    if (!cameraReady || !hasCameraPermission) return;
-    
+    if (!cameraReady || !hasCameraPermission || processing) return;
+
     // Double-check permission before capture
     const permissionStatus = await check(CAMERA_PERMISSION);
     if (permissionStatus !== RESULTS.GRANTED) {
       showPermissionRequiredAlert();
       return;
     }
-    
-    console.log('TEMPLATE OBJECT:', template, 'cameraPosition=', cameraPosition);
+
+    setProcessing(true);
+    console.log(
+      'TEMPLATE OBJECT:',
+      template,
+      'cameraPosition=',
+      cameraPosition,
+    );
 
     try {
-      // Always take a full-resolution photo first
-      const photo = await cameraRef.current.takePhoto({ qualityPrioritization: 'quality' });
+      // 1. Take a full-resolution photo (4:3)
+      const photo = await cameraRef.current.takePhoto();
       // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
       let previewCapturePath = null;
       try {
@@ -947,9 +961,12 @@ export default function CameraScreen({ navigation, route }) {
             }, 900);
           });
 
-          if (!loaded) console.log('Warning: preview image did not finish loading before capture (timeout)');
+          if (!loaded) console.log('Warning: preview image timeout');
 
-          previewCapturePath = await viewShotRef.current.capture({ format: 'jpg', quality: 1 });
+          previewCapturePath = await viewShotRef.current.capture({
+            format: 'jpg',
+            quality: 0.6,
+          });
           // Cleanup
           setPreviewImageUri(null);
           setIsCapturingPreview(false);
@@ -997,22 +1014,24 @@ export default function CameraScreen({ navigation, route }) {
         photo.path,
         template.id,
         overlayRect,
-        previewCapturePath
+        previewCapturePath,
       );
       const uploadPhoto = {
         uri: `file://${mergedPath}`,
         name: `photo_${Date.now()}.jpg`,
         type: 'image/jpeg',
       };
-      
+
       // Defer saving: show preview and let user confirm (tick) to save/upload
       setFinalImageUri(`file://${mergedPath}`);
-      setCapturedPhoto(uploadPhoto); 
-      
+      setCapturedPhoto(uploadPhoto);
+
       setShowPreview(true);
     } catch (e) {
       console.log(e);
       Alert.alert('Error', e.message);
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -1022,7 +1041,7 @@ export default function CameraScreen({ navigation, route }) {
       showPermissionRequiredAlert();
       return;
     }
-    
+
     if (countdown > 0) return;
 
     if (timerSec > 0) {
@@ -1048,7 +1067,9 @@ export default function CameraScreen({ navigation, route }) {
       return (
         <View style={styles.permissionContainer}>
           <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.permissionText}>Checking camera permission...</Text>
+          <Text style={styles.permissionText}>
+            Checking camera permission...
+          </Text>
         </View>
       );
     }
@@ -1057,7 +1078,7 @@ export default function CameraScreen({ navigation, route }) {
     if (!hasCameraPermission) {
       return (
         <View style={styles.permissionContainer}>
-          <MaterialIcons name="camera-off" size={80} color="#fff" />
+          <Icon name="camera-off" size={80} color="#fff" />
           <Text style={styles.permissionText}>Camera Access Required</Text>
           <Text style={styles.permissionSubText}>
             Please grant camera permission to use this feature
@@ -1078,6 +1099,7 @@ export default function CameraScreen({ navigation, route }) {
       );
     }
 
+    // 1. If capturing front-camera preview (ViewShot hack)
     if (isCapturingPreview && previewImageUri) {
       return (
         <ViewShot
@@ -1086,50 +1108,28 @@ export default function CameraScreen({ navigation, route }) {
           options={{ format: 'jpg', quality: 1 }}
         >
           <View style={{ flex: 1 }}>
-            {/* Preview image with the same dimensions as camera */}
-            {overlayLayout ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  left: overlayLayout.x,
-                  top: overlayLayout.y,
-                  width: overlayLayout.width,
-                  height: overlayLayout.height,
-                  overflow: 'hidden',
-                }}
-              >
-                <Image
-                  source={{ uri: previewImageUri }}
-                  style={[{ width: '100%', height: '100%' }, cameraPosition === 'front' ? { transform: [{ scaleX: -1 }] } : null]}
-                  resizeMode="cover"
-                  onLoad={() => {
-                    setPreviewLoaded(true);
-                    if (previewLoadResolver.current) {
-                      previewLoadResolver.current(true);
-                      previewLoadResolver.current = null;
-                    }
-                  }}
-                />
-              </View>
-            ) : (
-              <Image
-                source={{ uri: previewImageUri }}
-                style={[{ flex: 1 }, cameraPosition === 'front' ? { transform: [{ scaleX: -1 }] } : null]}
-                resizeMode="cover"
-                onLoad={() => {
-                  setPreviewLoaded(true);
-                  if (previewLoadResolver.current) {
-                    previewLoadResolver.current(true);
-                    previewLoadResolver.current = null;
-                  }
-                }}
-              />
-            )}
-
-            {/* Template overlay on top of preview */}
+            {/* The image of the person needs to cover the same 3:4 area as the camera */}
+            <Image
+              source={{ uri: previewImageUri }}
+              style={[
+                { flex: 1 },
+                cameraPosition === 'front'
+                  ? { transform: [{ scaleX: -1 }] }
+                  : null,
+              ]}
+              resizeMode="cover"
+              onLoad={() => {
+                setPreviewLoaded(true);
+                if (previewLoadResolver.current) {
+                  previewLoadResolver.current(true);
+                  previewLoadResolver.current = null;
+                }
+              }}
+            />
+            {/* Template on top */}
             <TemplateOverlay
               template={template.src}
-              onLayoutOverlay={(layout) => { console.log('ONLAYOUT OVERLAY:', layout); setOverlayLayout(layout); }}
+              onLayoutOverlay={layout => setOverlayLayout(layout)}
               absolute
             />
           </View>
@@ -1137,50 +1137,19 @@ export default function CameraScreen({ navigation, route }) {
       );
     }
 
-    // Regular camera view (not capturing preview)
+    // 2. Regular Camera Mode (Matched to 3:4)
+    // We render the Camera at the FULL size of the container, and place the Template Overlay on top.
+    // This ensures the camera engine uses the full sensor/preview resolution.
     return (
-      <View style={{ flex: 1 }}>
-        {overlayLayout ? (
-          <View
-            style={{
-              position: 'absolute',
-              left: overlayLayout.x,
-              top: overlayLayout.y,
-              width: overlayLayout.width,
-              height: overlayLayout.height,
-              overflow: 'hidden',
-            }}
-          >
-            <CameraView
-              ref={cameraRef}
-              cameraPosition={cameraPosition}
-              template={template.src}
-              style={{ flex: 1 }}
-              showTemplate={false}
-              onReady={() => {
-                console.log('Camera ready');
-                setCameraReady(true);
-              }}
-            />
-          </View>
-        ) : (
-          <View style={{ flex: 1 }}>
-            <CameraView
-              ref={cameraRef}
-              cameraPosition={cameraPosition}
-              template={template.src}
-              onReady={() => {
-                console.log('Camera ready');
-                setCameraReady(true);
-              }}
-            />
-          </View>
-        )}
-
-        {/* Template overlay for UI preview */}
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <CameraView
+          ref={cameraRef}
+          cameraPosition={cameraPosition}
+          onReady={() => setCameraReady(true)}
+        />
         <TemplateOverlay
           template={template.src}
-          onLayoutOverlay={(layout) => setOverlayLayout(layout)}
+          onLayoutOverlay={layout => setOverlayLayout(layout)}
           absolute
         />
       </View>
@@ -1190,6 +1159,12 @@ export default function CameraScreen({ navigation, route }) {
   const handleConfirmSave = async () => {
     try {
       setIsSaving(true);
+
+      console.log('SAVING PHOTO:', {
+        user,
+        template: template.name,
+        uri: finalImageUri,
+      });
 
       // 1️⃣ Save locally
       await saveToGallery(finalImageUri);
@@ -1203,25 +1178,25 @@ export default function CameraScreen({ navigation, route }) {
       //   source: 'Photo Merge App',
       // };
       // await uploadWithOfflineQueue(capturedPhoto, uploadUserData);
-         // 2️⃣ Upload to backend
-    const metadata = {
-      clientName: user?.name || '',
-      email: user?.email || '',
-      whatsapp: user?.whatsapp || '',
-      template_name: template?.id || 'birthday_template_1',
-      source: 'Photo Merge App',
-    };
+      // 2️⃣ Upload to backend
+      const metadata = {
+        clientName: user?.name || '',
+        email: user?.email || '',
+        whatsapp: user?.whatsapp || '',
+        template_name: template?.id || 'birthday_template_1',
+        source: 'Photo Merge App',
+      };
 
-    if (capturedPhoto) {
-      const uploadResult = await uploadToApi(capturedPhoto, metadata);
-      console.log('Upload success:', uploadResult);
-      Alert.alert('Success', 'Photo saved & uploaded successfully!');
-    } else {
-      Alert.alert('Saved', 'Photo saved locally.');
-    }
+      if (capturedPhoto) {
+        const uploadResult = await uploadToApi(capturedPhoto, metadata);
+        console.log('Upload success:', uploadResult);
+        Alert.alert('Success', 'Photo saved & uploaded successfully!');
+      } else {
+        Alert.alert('Saved', 'Photo saved locally.');
+      }
     } catch (e) {
-    console.error('Upload error:', e);
-    Alert.alert('Error', 'Upload failed. Photo saved locally.');
+      console.error('Upload error:', e);
+      Alert.alert('Error', 'Upload failed. Photo saved locally.');
       // Alert.alert('Saved', 'Photo saved locally. Will upload when online.');
     } finally {
       setIsSaving(false);
@@ -1243,27 +1218,46 @@ export default function CameraScreen({ navigation, route }) {
 
   return (
     <View style={styles.container}>
-      {/* Main camera/preview area */}
-      <View
-        style={styles.cameraContainer}
-        onLayout={(e) => setContainerLayout(e.nativeEvent.layout)}
-      >
-        {renderCameraContent()}
-
-        {/* Top controls - Only show if we have camera permission */}
-        {hasCameraPermission && (
+      {/* Top Bar */}
+      <View style={styles.topBar}>
+         {!hasCameraPermission && (
           <View style={styles.topControls} pointerEvents="box-none">
-            <View style={styles.controlsRow}>
+            <View style={styles.topBar}>
               {/* Add permission refresh button if needed */}
               <TouchableOpacity
-                style={styles.button}
+                style={styles.topIconBtn}
                 onPress={checkCameraPermission}
               >
-                <MaterialIcons name="refresh" size={20} color="#fff" />
+                <Icon name="refresh" size={28} color="#fff" />
               </TouchableOpacity>
             </View>
           </View>
         )}
+        <TouchableOpacity
+          style={styles.topIconBtn}
+          onPress={() =>
+            setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
+          }
+        >
+          <View style={{ position: 'relative' }}>
+            <Icon name="timer" size={28} color="#fff" />
+            {timerSec !== 0 && (
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerBadgeText}>{timerSec}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      {/* Main camera/preview area - 3:4 Aspect Ratio */}
+      <View
+        style={styles.cameraContainer}
+        onLayout={e => setContainerLayout(e.nativeEvent.layout)}
+      >
+        {renderCameraContent()}
+
+        {/* Top controls - Only show if we have camera permission */}  
 
         {/* Countdown overlay */}
         {countdown > 0 && (
@@ -1273,124 +1267,194 @@ export default function CameraScreen({ navigation, route }) {
         )}
       </View>
 
-      {/* Template slider at bottom - Only show if we have camera permission */}
+      {/* Template slider area - Only show if we have camera permission */}
       {hasCameraPermission && (
-        <TemplateSlider
-          templates={TEMPLATES}
-          onSelect={setTemplate}
-        />
+        <View style={styles.sliderContainer}>
+          <TemplateSlider templates={TEMPLATES} onSelect={setTemplate} />
+        </View>
       )}
-
       {/* Capture button and controls - Only show if we have camera permission */}
       {hasCameraPermission && (
         <View style={styles.bottomControls}>
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={styles.iconButton}
             onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
           >
             <View style={{ alignItems: 'center' }}>
-              <MaterialIcons  name="timer" size={22} color="#fff" />
+              <Icon  name="timer" size={22} color="#fff" />
               {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
             </View>
+          </TouchableOpacity> */}
+          <TouchableOpacity
+            style={styles.sideButton}
+            onPress={() => Alert.alert('Gallery', 'Opening Gallery...')}
+          >
+            <Icon name="photo-library" size={32} color="#fff" />
           </TouchableOpacity>
-
-          <CaptureButton
-            onPress={onCapture}
-            disabled={!cameraReady}
-          />
+            <TouchableOpacity
+              style={styles.captureBtnWrapper}
+          onPress={onCapture}
+          disabled={processing || !cameraReady}
+        >
+           <View style={styles.captureBtnOuter}>
+            <View style={styles.captureBtnInner} />
+          </View>
+        </TouchableOpacity>
+          {/* <CaptureButton onPress={onCapture} disabled={!cameraReady} /> */}
 
           <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => setCameraPosition((p) => (p === 'front' ? 'back' : 'front'))}
+            style={styles.sideButton}
+            onPress={() =>
+              setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'))
+            }
           >
-            <MaterialIcons  name="flip-camera-android" size={24} color="#fff" />
+            <Icon name="cached" size={32} color="#fff" />
           </TouchableOpacity>
         </View>
       )}
-      
+
+      {/* Final Preview Overlay */}
       {showPreview && finalImageUri && (
         <View style={styles.previewOverlay}>
-          <Image source={{ uri: finalImageUri }} style={styles.previewImage} />
-
+          <Image
+            source={{ uri: finalImageUri }}
+            style={styles.fullPreviewImage}
+            resizeMode="contain"
+          />
           <View style={styles.previewActions}>
-            {/* CLOSE */}
             <TouchableOpacity
-              style={[styles.previewBtn, styles.closeBtn]}
+              style={styles.previewBtn}
               onPress={() => {
                 setShowPreview(false);
                 setFinalImageUri(null);
               }}
             >
-              <Text style={styles.btnText}>✕</Text>
+              <Icon name="close" size={30} color="#fff" />
             </TouchableOpacity>
-
-            {/* TICK */}
             <TouchableOpacity
-              disabled={isSaving}
-              style={[
-                styles.previewBtn,
-                styles.tickBtn,
-                isSaving && { opacity: 0.6 }
-              ]}
+              style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]}
               onPress={handleConfirmSave}
             >
               {isSaving ? (
-                <ActivityIndicator size="large" color="#fff" />
+                <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnText}>✓</Text>
+                <Icon name="check" size={30} color="#fff" />
               )}
             </TouchableOpacity>
           </View>
-        </View>
+            </View>
       )}
-
-    </View>
+          {/* Processing Indicator */}
+          {processing && (
+            <View style={StyleSheet.absoluteFill}>
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(0,0,0,0.6)',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <ActivityIndicator size="large" color="#ffffff" />
+                <Text
+                  style={{ color: 'white', marginTop: 20, fontWeight: 'bold' }}
+                >
+                  Enhancing Image...
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+    //   )}
+    // </View>
   );
 }
+
+const screenWidth = Dimensions.get('window').width;
+const cameraHeight = (screenWidth * 4) / 3;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#121212',
+  },
+  topBar: {
+    height: 50,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginVertical: 20,
+  },
+  topIconBtn: {
+    padding: 10,
+  },
+  timerBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timerBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   cameraContainer: {
-    flex: 7,
-    position: 'relative',
+    width: screenWidth,
+    height: cameraHeight,
+    backgroundColor: '#000',
     overflow: 'hidden',
+    position: 'relative',
   },
-  topControls: {
-    position: 'absolute',
-    top: 50,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    paddingHorizontal: 16,
+  sliderContainer: {
+    marginVertical: 10,
+    height: 100,
   },
-  controlsRow: {
+  bottomControls: {
+    flex: 1,
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: 8,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingBottom: 30,
   },
-  button: {
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+  sideButton: {
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  activeButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  captureBtnWrapper: {
+    width: 80,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  buttonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+  captureBtnOuter: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 4,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  captureBtnInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#fff',
   },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    zIndex: 20,
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   countdownText: {
     fontSize: 120,
@@ -1400,67 +1464,26 @@ const styles = StyleSheet.create({
   previewOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
-    zIndex: 50,
+    zIndex: 100,
   },
-  previewImage: {
+  fullPreviewImage: {
     flex: 1,
-    resizeMode: 'contain',
   },
   previewActions: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
+    height: 120,
     flexDirection: 'row',
     justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingBottom: 20,
   },
   previewBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#333',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  closeBtn: {
-    backgroundColor: '#ff3b30',
-  },
-  tickBtn: {
-    backgroundColor: '#4cd964',
-  },
-  btnText: {
-    fontSize: 32,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  // Bottom control row (capture + icons)
-  bottomControls: {
-    position: 'absolute',
-    bottom: 20,
-    left: 0,
-    right: 0,
-    zIndex: 40,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  iconButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  iconSubText: {
-    color: '#fff',
-    fontSize: 12,
-    marginTop: 2,
   },
   // Permission UI styles
   permissionContainer: {
