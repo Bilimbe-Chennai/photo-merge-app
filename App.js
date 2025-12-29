@@ -150,14 +150,37 @@ import LoginScreen from "./src/screens/LoginScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import PreviewScreen from "./src/screens/PreviewScreen";
 import ShareScreen from "./src/screens/ShareScreen";
-
+import { Linking } from "react-native";
 const Stack = createNativeStackNavigator();
+const SHARE_ROUTE_REGEX = /photomergeapp:\/\/share\/(.+)/;
 
+function ShareOnlyStack({ shareId }) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen
+        name="Share"
+        component={ShareScreen}
+        initialParams={{ photoId: shareId }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function MainAppStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Camera" component={CameraScreen} />
+      <Stack.Screen name="Preview" component={PreviewScreen} />
+      <Stack.Screen name="Share" component={ShareScreen} />
+    </Stack.Navigator>
+  );
+}
 
 const { width, height } = Dimensions.get('window');
 
 const linking = {
-  prefixes: ['photomergeapp://', 'https://api.bilimbebrandactivations.com'],
+  prefixes: ['photomergeapp://'],
   config: {
     screens: {
       Share: 'share/:photoId',
@@ -169,7 +192,8 @@ const linking = {
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
-
+ const [launchMode, setLaunchMode] = useState(null); // 'share' | 'main'
+const [shareId, setShareId] = useState(null);
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.5)).current;
@@ -197,6 +221,30 @@ const App = () => {
       ])
     ).start();
   };
+useEffect(() => {
+  const handleUrl = (url) => {
+    if (!url) {
+      setLaunchMode("main");
+      return;
+    }
+
+    const match = url.match(SHARE_ROUTE_REGEX);
+    if (match) {
+      setShareId(match[1]);
+      setLaunchMode("share");
+    } else {
+      setLaunchMode("main");
+    }
+  };
+
+  Linking.getInitialURL().then(handleUrl);
+
+  const sub = Linking.addEventListener("url", ({ url }) => {
+    handleUrl(url);
+  });
+
+  return () => sub.remove();
+}, []);
 
   useEffect(() => {
     startShimmerAnimation();
@@ -375,14 +423,15 @@ const App = () => {
       <SafeAreaProvider>
         <SafeAreaView style={styles.mainContainer}>
           {/* <ClientPageUser /> */}
-          <NavigationContainer linking={linking}>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Login" component={LoginScreen} />
-              <Stack.Screen name="Camera" component={CameraScreen} />
-              <Stack.Screen name="Preview" component={PreviewScreen} />
-              <Stack.Screen name="Share" component={ShareScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
+         {launchMode && (
+  <NavigationContainer>
+    {launchMode === "share" ? (
+      <ShareOnlyStack shareId={shareId} />
+    ) : (
+      <MainAppStack />
+    )}
+  </NavigationContainer>
+)}
         </SafeAreaView>
       </SafeAreaProvider>
     </>

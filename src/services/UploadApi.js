@@ -123,6 +123,7 @@
 // }
 import { Platform } from 'react-native';
 import RNFetchBlob from 'react-native-blob-util';
+import useAxios from "./useAxios";
 const API_URL = 'https://api.bilimbebrandactivations.com/api/client/client/test';
 
 // export const uploadToApi = async (photo, metadata = {}) => {
@@ -216,39 +217,19 @@ export const uploadToApi = async (photo, metadata = {}) => {
     throw err;
   }
 };
-
 export const shareApi = async (link, whatsappNumber, id) => {
+ const axiosData = useAxios();
   try {
     if (!link) throw new Error('No url to share');
-
     // The backend route is /client/share/:whatsapp
     const url = `https://api.bilimbebrandactivations.com/api/client/client/share/${whatsappNumber}`;
     console.log('Calling Share API:', url, { whatsappNumber, id, viewUrl: link });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        id: id,
-        viewUrl: link,
-      }),
-    });
-
-    console.log('Share API Status:', response.status);
-
-    const responseText = await response.text();
-    console.log('Share API Raw Response:', responseText);
-
-    try {
-      const respJson = JSON.parse(responseText);
-      return respJson;
-    } catch (e) {
-      console.error('Failed to parse share response as JSON:', e);
-      throw new Error(`Server returned non-JSON response (Status ${response.status}): ${responseText.substring(0, 100)}`);
-    }
+   const response = axiosData
+      .post(`client/client/share/${whatsappNumber}`, {viewUrl: link,
+    id: id}, {
+        headers: { "Content-Type": "application/json" },
+      })
+    console.log('Share API Status:', response);
   } catch (err) {
     console.error('Share error:', err);
     throw err;

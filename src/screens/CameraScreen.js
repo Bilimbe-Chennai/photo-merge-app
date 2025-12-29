@@ -1447,7 +1447,7 @@ export default function CameraScreen({ navigation, route }) {
                   onPress={async () => {
                     try {
                       setIsSaving(true);
-                      const pageUrl = `https://api.bilimbebrandactivations.com/share/${lastUploadResult._id}`;
+                      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
                       // User mentioned: "call the shareapi once the api given then response redirect to share page"
                       // shareApi needs (pageUrl, whatsappNumber, id)
                       if (lastUploadResult) {
@@ -1461,7 +1461,6 @@ export default function CameraScreen({ navigation, route }) {
                       animateSheetOut(() => {
                         setShowSuccessPopup(false);
                         navigation.navigate('Login');
-
                         // Clean up current screen state after navigation
                         setTimeout(() => {
                           setShowPreview(false);
