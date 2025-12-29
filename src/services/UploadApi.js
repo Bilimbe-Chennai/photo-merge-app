@@ -201,10 +201,75 @@ export const uploadToApi = async (photo, metadata = {}) => {
       data
     );
 
+    const responseText = await response.text();
+    console.log('UPLOAD RAW RESPONSE:', responseText);
+
+    try {
+      const respJson = JSON.parse(responseText);
+      return respJson;
+    } catch (e) {
+      console.error('Failed to parse upload response:', e);
+      throw new Error(`Upload server returned non-JSON: ${responseText.substring(0, 50)}`);
+    }
+  } catch (err) {
+    console.error('Upload error:', err);
+    throw err;
+  }
+};
+
+export const shareApi = async (link, whatsappNumber, id) => {
+  try {
+    if (!link) throw new Error('No url to share');
+
+    // The backend route is /client/share/:whatsapp
+    const url = `https://api.bilimbebrandactivations.com/api/client/client/share/${whatsappNumber}`;
+    console.log('Calling Share API:', url, { whatsappNumber, id, viewUrl: link });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        id: id,
+        viewUrl: link,
+      }),
+    });
+
+    console.log('Share API Status:', response.status);
+
+    const responseText = await response.text();
+    console.log('Share API Raw Response:', responseText);
+
+    try {
+      const respJson = JSON.parse(responseText);
+      return respJson;
+    } catch (e) {
+      console.error('Failed to parse share response as JSON:', e);
+      throw new Error(`Server returned non-JSON response (Status ${response.status}): ${responseText.substring(0, 100)}`);
+    }
+  } catch (err) {
+    console.error('Share error:', err);
+    throw err;
+  }
+};
+
+export const getPhotoById = async (id) => {
+  try {
+    const response = await fetch(
+      `https://api.bilimbebrandactivations.com/api/client/client/get-photo/${id}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      }
+    );
     const respJson = await response.json();
     return respJson;
   } catch (err) {
-    console.error('Upload error:', err);
+    console.error('Fetch photo error:', err);
     throw err;
   }
 };

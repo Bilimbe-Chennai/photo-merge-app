@@ -776,7 +776,7 @@ import {
   Platform,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
-import { uploadToApi } from '../services/UploadApi';
+import { uploadToApi, shareApi } from '../services/UploadApi';
 import CameraView from '../components/CameraView';
 import TemplateOverlay from '../components/TemplateOverlay';
 import TemplateSlider from '../components/TemplateSlider';
@@ -788,7 +788,9 @@ import NetInfo from '@react-native-community/netinfo';
 import { processQueue } from '../services/OfflineUploadQueue';
 import { uploadWithOfflineQueue } from '../services/ApiUploadService';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import CommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { PERMISSIONS, RESULTS, request, check } from 'react-native-permissions';
+import { Easing, Animated as RNAnimated } from 'react-native';
 
 // Camera permissions based on platform
 const CAMERA_PERMISSION = Platform.select({
@@ -826,6 +828,53 @@ export default function CameraScreen({ navigation, route }) {
     route && route.params && route.params.user ? route.params.user : {};
   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
   const [debugPayload, setDebugPayload] = useState(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [showSharePopup, setShowSharePopup] = useState(false);
+  const [lastUploadResult, setLastUploadResult] = useState(null);
+
+  // Animation Values
+  const sheetTranslateY = useRef(new RNAnimated.Value(screenHeight / 2)).current;
+  const sheetOpacity = useRef(new RNAnimated.Value(0)).current;
+
+  const animateSheetIn = () => {
+    RNAnimated.parallel([
+      RNAnimated.timing(sheetTranslateY, {
+        toValue: 0,
+        duration: 400,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(sheetOpacity, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateSheetOut = (callback) => {
+    RNAnimated.parallel([
+      RNAnimated.timing(sheetTranslateY, {
+        toValue: screenHeight / 2,
+        duration: 300,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      RNAnimated.timing(sheetOpacity, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      if (callback) callback();
+    });
+  };
+
+  useEffect(() => {
+    if (showSuccessPopup || showSharePopup) {
+      animateSheetIn();
+    }
+  }, [showSuccessPopup, showSharePopup]);
 
   // Check and request camera permission on mount
   useEffect(() => {
@@ -919,7 +968,7 @@ export default function CameraScreen({ navigation, route }) {
     // reset overlay measurements when camera switches
     setOverlayLayout(null);
   }, [cameraPosition]);
-const pickImage = async () => {
+  const pickImage = async () => {
     const result = await launchImageLibrary({
       mediaType: "photo",
       quality: 1,
@@ -929,7 +978,7 @@ const pickImage = async () => {
 
     if (result.assets && result.assets.length > 0) {
       const picked = result.assets[0];
-     //setPhoto(picked.uri);
+      //setPhoto(picked.uri);
     }
   };
 
@@ -1169,10 +1218,11 @@ const pickImage = async () => {
     );
   };
 
+
   const handleConfirmSave = async () => {
     try {
       setIsSaving(true);
-
+      let uploadResult;
       console.log('SAVING PHOTO:', {
         user,
         template: template.name,
@@ -1201,9 +1251,9 @@ const pickImage = async () => {
       };
 
       if (capturedPhoto) {
-        const uploadResult = await uploadToApi(capturedPhoto, metadata);
+        uploadResult = await uploadToApi(capturedPhoto, metadata);
+        setLastUploadResult(uploadResult.media);
         console.log('Upload success:', uploadResult);
-        Alert.alert('Success', 'Photo saved & uploaded successfully!');
       } else {
         Alert.alert('Saved', 'Photo saved locally.');
       }
@@ -1213,9 +1263,11 @@ const pickImage = async () => {
       // Alert.alert('Saved', 'Photo saved locally. Will upload when online.');
     } finally {
       setIsSaving(false);
-      setShowPreview(false);
-      setFinalImageUri(null);
-      setCapturedPhoto(null);
+      // Instead of hiding preview, show success popup
+      // setShowPreview(false);
+      // setFinalImageUri(null);
+      // setCapturedPhoto(null);
+      setShowSuccessPopup(true);
     }
   };
 
@@ -1269,7 +1321,7 @@ const pickImage = async () => {
       >
         {renderCameraContent()}
 
-        {/* Top controls - Only show if we have camera permission */}  
+        {/* Top controls - Only show if we have camera permission */}
 
         {/* Countdown overlay */}
         {countdown > 0 && (
@@ -1297,36 +1349,36 @@ const pickImage = async () => {
               {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
             </View>
           </TouchableOpacity> */}
-            <TouchableOpacity
-          style={styles.sideButton}
-          onPress={() =>
-            setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
-          }
-        >
-          <View style={{ position: 'relative' }}>
-            <Icon name="timer" size={28} color="#fff" />
-            {timerSec !== 0 && (
-              <View style={styles.timerBadge}>
-                <Text style={styles.timerBadgeText}>{timerSec}</Text>
-              </View>
-            )}
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.sideButton}
+            onPress={() =>
+              setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
+            }
+          >
+            <View style={{ position: 'relative' }}>
+              <Icon name="timer" size={28} color="#fff" />
+              {timerSec !== 0 && (
+                <View style={styles.timerBadge}>
+                  <Text style={styles.timerBadgeText}>{timerSec}</Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
           {/* <TouchableOpacity
             style={styles.sideButton}
             onPress={() => pickImage()}
           >
             <Icon name="photo-library" size={32} color="#fff" />
           </TouchableOpacity> */}
-            <TouchableOpacity
-              style={styles.captureBtnWrapper}
-          onPress={onCapture}
-          disabled={processing || !cameraReady}
-        >
-           <View style={styles.captureBtnOuter}>
-            <View style={styles.captureBtnInner} />
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.captureBtnWrapper}
+            onPress={onCapture}
+            disabled={processing || !cameraReady}
+          >
+            <View style={styles.captureBtnOuter}>
+              <View style={styles.captureBtnInner} />
+            </View>
+          </TouchableOpacity>
           {/* <CaptureButton onPress={onCapture} disabled={!cameraReady} /> */}
 
           <TouchableOpacity
@@ -1348,56 +1400,125 @@ const pickImage = async () => {
             style={styles.fullPreviewImage}
             resizeMode="contain"
           />
-          <View style={styles.previewActions}>
-            <TouchableOpacity
-              style={styles.previewBtn}
-              onPress={() => {
-                setShowPreview(false);
-                setFinalImageUri(null);
-              }}
-            >
-              <Icon name="close" size={30} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]}
-              onPress={handleConfirmSave}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Icon name="check" size={30} color="#fff" />
-              )}
-            </TouchableOpacity>
-          </View>
-            </View>
-      )}
-          {/* Processing Indicator */}
-          {processing && (
-            <View style={StyleSheet.absoluteFill}>
-              <View
-                style={{
-                  flex: 1,
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  justifyContent: 'center',
-                  alignItems: 'center',
+
+          {!showSuccessPopup && !showSharePopup && (
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={styles.previewBtn}
+                onPress={() => {
+                  setShowPreview(false);
+                  setFinalImageUri(null);
                 }}
               >
-                <ActivityIndicator size="large" color="#ffffff" />
-                <Text
-                  style={{ color: 'white', marginTop: 20, fontWeight: 'bold' }}
-                >
-                  Enhancing Image...
-                </Text>
-              </View>
+                <Icon name="close" size={30} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]}
+                onPress={handleConfirmSave}
+              >
+                {isSaving ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Icon name="check" size={30} color="#fff" />
+                )}
+              </TouchableOpacity>
             </View>
           )}
+
+          {showSuccessPopup && !showSharePopup && (
+            <RNAnimated.View
+              style={[
+                styles.bottomSheet,
+                {
+                  transform: [{ translateY: sheetTranslateY }],
+                  opacity: sheetOpacity,
+                },
+              ]}
+            >
+              <View style={styles.dragHandle} />
+              <View style={styles.sheetContent}>
+                <View style={styles.successIconCircle}>
+                  <Icon name="check" size={40} color="#fff" />
+                </View>
+                <Text style={styles.sheetTitle}>Success!</Text>
+                <Text style={styles.sheetSubtitle}>Photo saved in your gallery</Text>
+                <TouchableOpacity
+                  style={styles.sheetActionBtn}
+                  onPress={async () => {
+                    try {
+                      setIsSaving(true);
+                      const pageUrl = `https://api.bilimbebrandactivations.com/share/${lastUploadResult._id}`;
+                      // User mentioned: "call the shareapi once the api given then response redirect to share page"
+                      // shareApi needs (pageUrl, whatsappNumber, id)
+                      if (lastUploadResult) {
+                        await shareApi(
+                          pageUrl,
+                          user?.whatsapp,
+                          lastUploadResult._id
+                        );
+                      }
+
+                      animateSheetOut(() => {
+                        setShowSuccessPopup(false);
+                        navigation.navigate('Login');
+
+                        // Clean up current screen state after navigation
+                        setTimeout(() => {
+                          setShowPreview(false);
+                          setFinalImageUri(null);
+                          setCapturedPhoto(null);
+                          setLastUploadResult(null);
+                        }, 500);
+                      });
+                    } catch (err) {
+                      console.error('Share call failed:', err);
+                      // Still navigate to share popup even if notification fails? 
+                      // User said "once api given then response redirect"
+                      Alert.alert('Sharing', 'Proceeding to share options.');
+                      animateSheetOut(() => {
+                        setShowSuccessPopup(false);
+                        navigation.navigate('Share', { mergedImage: finalImageUri });
+                      });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.sheetActionBtnText}>Share</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </RNAnimated.View>
+          )}
         </View>
-    //   )}
-    // </View>
+      )}
+
+      {/* Processing Indicator */}
+      {processing && (
+        <View style={StyleSheet.absoluteFill}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={{ color: 'white', marginTop: 20, fontWeight: 'bold' }}>
+              Enhancing Image...
+            </Text>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
 
-const screenWidth = Dimensions.get('window').width;
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const cameraHeight = (screenWidth * 4) / 3;
 
 const styles = StyleSheet.create({
@@ -1411,7 +1532,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: 20,
-    
+
   },
   topIconBtn: {
     padding: 10,
@@ -1551,5 +1672,98 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     backgroundColor: '#5856D6',
+  },
+  // Bottom Sheet Popup styles
+  bottomSheet: {
+    position: 'absolute',
+    bottom: 0,
+    width: screenWidth,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingTop: 15,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+  },
+  dragHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 2,
+    marginBottom: 25,
+  },
+  sheetContent: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  successIconCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#CD1C1C',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sheetTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
+    marginBottom: 8,
+  },
+  sheetSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 30,
+    textAlign: 'center',
+  },
+  sheetActionBtn: {
+    width: '100%',
+    height: 56,
+    backgroundColor: '#CD1C1C',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sheetActionBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  shareTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#000',
+    alignSelf: 'flex-start',
+    marginBottom: 20,
+    marginLeft: 5,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 30,
+  },
+  socialItem: {
+    alignItems: 'center',
+  },
+  socialIconBg: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  socialName: {
+    fontSize: 10,
+    color: '#666',
   },
 });

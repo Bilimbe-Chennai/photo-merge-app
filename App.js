@@ -149,11 +149,23 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LoginScreen from "./src/screens/LoginScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import PreviewScreen from "./src/screens/PreviewScreen";
+import ShareScreen from "./src/screens/ShareScreen";
 
 const Stack = createNativeStackNavigator();
 
 
 const { width, height } = Dimensions.get('window');
+
+const linking = {
+  prefixes: ['photomergeapp://', 'https://api.bilimbebrandactivations.com'],
+  config: {
+    screens: {
+      Share: 'share/:photoId',
+      Login: 'login',
+      Camera: 'camera',
+    },
+  },
+};
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -363,11 +375,12 @@ const App = () => {
       <SafeAreaProvider>
         <SafeAreaView style={styles.mainContainer}>
           {/* <ClientPageUser /> */}
-          <NavigationContainer>
+          <NavigationContainer linking={linking}>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Camera" component={CameraScreen} />
               <Stack.Screen name="Preview" component={PreviewScreen} />
+              <Stack.Screen name="Share" component={ShareScreen} />
             </Stack.Navigator>
           </NavigationContainer>
         </SafeAreaView>
