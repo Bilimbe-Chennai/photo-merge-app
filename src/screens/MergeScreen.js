@@ -6,11 +6,11 @@ const MergeScreen = () => {
   
   const pickImage = () => {
     // Will implement image picker later
-    console.log('Pick image');
+    // console.log('Pick image');
   };
   
   const mergePhotos = () => {
-    console.log('Merge photos');
+    // console.log('Merge photos');
   };
   
   return (

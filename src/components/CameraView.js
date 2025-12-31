@@ -51,9 +51,9 @@ const CameraView = forwardRef(
         return b.videoWidth - a.videoWidth;
       })[0];
 
-      console.log(
-        `[Camera] Selected Format: ${bestFormat?.photoWidth}x${bestFormat?.photoHeight} HDR:${bestFormat?.supportsPhotoHdr} Vid:${bestFormat?.videoWidth}x${bestFormat?.videoHeight}`,
-      );
+      // console.log(
+      //   `[Camera] Selected Format: ${bestFormat?.photoWidth}x${bestFormat?.photoHeight} HDR:${bestFormat?.supportsPhotoHdr} Vid:${bestFormat?.videoWidth}x${bestFormat?.videoHeight}`,
+      // );
       return bestFormat;
     }, [device]);
 

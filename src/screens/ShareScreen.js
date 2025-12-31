@@ -21,11 +21,11 @@ const ShareScreen = ({ navigation, route }) => {
   const { photoId } = route.params || {};
   const [mergedImage, setMergedImage] = useState(null);
   const [loading, setLoading] = useState(false);
-  console.log('ShareScreen photoId:', photoId);
-  console.log(
-    'IMAGE URL:',
-    `https://api.bilimbebrandactivations.com/api/upload/file/${photoId}`,
-  );
+  // console.log('ShareScreen photoId:', photoId);
+  // console.log(
+  //   'IMAGE URL:',
+  //   `https://api.bilimbebrandactivations.com/api/upload/file/${photoId}`,
+  // );
   // Animation values
   const sheetTranslateY = useRef(new Animated.Value(screenHeight / 2)).current;
   const sheetOpacity = useRef(new Animated.Value(0)).current;

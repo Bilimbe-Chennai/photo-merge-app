@@ -123,8 +123,9 @@
 // }
 import { Platform } from 'react-native';
 import RNFetchBlob from 'react-native-blob-util';
-import useAxios from "./useAxios";
-const API_URL = 'https://api.bilimbebrandactivations.com/api/client/client/test';
+import useAxios from './useAxios';
+const API_URL =
+  'https://api.bilimbebrandactivations.com/api/client/client/test';
 
 // export const uploadToApi = async (photo, metadata = {}) => {
 //   try {
@@ -176,7 +177,8 @@ export const uploadToApi = async (photo, metadata = {}) => {
   try {
     if (!photo?.uri) throw new Error('No photo to upload');
 
-    const uploadUri = Platform.OS === 'ios' ? photo.uri.replace('file://', '') : photo.uri;
+    const uploadUri =
+      Platform.OS === 'ios' ? photo.uri.replace('file://', '') : photo.uri;
 
     const data = [
       {
@@ -196,56 +198,67 @@ export const uploadToApi = async (photo, metadata = {}) => {
       'POST',
       'https://api.bilimbebrandactivations.com/api/client/client/test',
       {
-        'Accept': 'application/json',
+        Accept: 'application/json',
         // ❌ Do NOT set Content-Type manually
       },
-      data
+      data,
     );
 
     const responseText = await response.text();
-    console.log('UPLOAD RAW RESPONSE:', responseText);
+    // console.log('UPLOAD RAW RESPONSE:', responseText);
 
     try {
       const respJson = JSON.parse(responseText);
       return respJson;
     } catch (e) {
       console.error('Failed to parse upload response:', e);
-      throw new Error(`Upload server returned non-JSON: ${responseText.substring(0, 50)}`);
+      throw new Error(
+        `Upload server returned non-JSON: ${responseText.substring(0, 50)}`,
+      );
     }
   } catch (err) {
     console.error('Upload error:', err);
     throw err;
   }
 };
-export const shareApi = async (link, whatsappNumber, id) => {
- const axiosData = useAxios();
+export const shareApi = async (type, link, whatsappNumber, id, name, email) => {
+  const axiosData = useAxios();
   try {
     if (!link) throw new Error('No url to share');
-    // The backend route is /client/share/:whatsapp
-    const url = `https://api.bilimbebrandactivations.com/api/client/client/share/${whatsappNumber}`;
-    console.log('Calling Share API:', url, { whatsappNumber, id, viewUrl: link });
-   const response = axiosData
-      .post(`client/client/share/${whatsappNumber}`, {viewUrl: link,
-    id: id}, {
-        headers: { "Content-Type": "application/json" },
-      })
-    console.log('Share API Status:', response);
+    if (type === 'email') {
+      const responseemail = axiosData.post(
+        `client/client/share/${email}`,
+        { viewUrl: link, typeSend: type, name: name, id: id },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    } else {
+      const responsewhatsapp = axiosData.post(
+        `client/client/share/${whatsappNumber}`,
+        { typeSend: type, viewUrl: link,name: name, id: id },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+    // console.log('Share API Status:', response);
   } catch (err) {
     console.error('Share error:', err);
     throw err;
   }
 };
 
-export const getPhotoById = async (id) => {
+export const getPhotoById = async id => {
   try {
     const response = await fetch(
       `https://api.bilimbebrandactivations.com/api/client/client/get-photo/${id}`,
       {
         method: 'GET',
         headers: {
-          'Accept': 'application/json',
+          Accept: 'application/json',
         },
-      }
+      },
     );
     const respJson = await response.json();
     return respJson;

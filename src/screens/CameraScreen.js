@@ -791,7 +791,8 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import CommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { PERMISSIONS, RESULTS, request, check } from 'react-native-permissions';
 import { Easing, Animated as RNAnimated } from 'react-native';
-
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { PanResponder } from 'react-native';
 // Camera permissions based on platform
 const CAMERA_PERMISSION = Platform.select({
   ios: PERMISSIONS.IOS.CAMERA,
@@ -803,6 +804,7 @@ export default function CameraScreen({ navigation, route }) {
   const viewShotRef = useRef(null);
   const [template, setTemplate] = useState(TEMPLATES[0]);
   const [cameraReady, setCameraReady] = useState(false);
+    const [typeShare, setTypeShare] = useState("whatsapp");
   const [cameraPosition, setCameraPosition] = useState('front');
   const [timerSec, setTimerSec] = useState(0);
   const [countdown, setCountdown] = useState(0);
@@ -817,13 +819,11 @@ export default function CameraScreen({ navigation, route }) {
   const [diagVariants, setDiagVariants] = useState(false);
   const [finalImageUri, setFinalImageUri] = useState(null);
   const [capturedPhoto, setCapturedPhoto] = useState(null);
-  console.log('Uploading photo:', capturedPhoto);
-
   const [showPreview, setShowPreview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
-
+const [shareSuccess, setShareSuccess] = useState(false);
   const user =
     route && route.params && route.params.user ? route.params.user : {};
   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
@@ -831,22 +831,24 @@ export default function CameraScreen({ navigation, route }) {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState(null);
-
+// Positions
+const SHEET_CLOSED = screenHeight / 2; // half hidden
+const SHEET_OPEN = 0;  
   // Animation Values
-  const sheetTranslateY = useRef(new RNAnimated.Value(screenHeight / 2)).current;
+  const sheetTranslateY = useRef(new RNAnimated.Value(SHEET_CLOSED)).current;
   const sheetOpacity = useRef(new RNAnimated.Value(0)).current;
 
   const animateSheetIn = () => {
     RNAnimated.parallel([
       RNAnimated.timing(sheetTranslateY, {
-        toValue: 0,
-        duration: 400,
-        easing: Easing.out(Easing.cubic),
+        toValue: SHEET_OPEN,
+        duration: 300,
+        //easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
       RNAnimated.timing(sheetOpacity, {
         toValue: 1,
-        duration: 300,
+        duration: 200,
         useNativeDriver: true,
       }),
     ]).start();
@@ -855,20 +857,52 @@ export default function CameraScreen({ navigation, route }) {
   const animateSheetOut = (callback) => {
     RNAnimated.parallel([
       RNAnimated.timing(sheetTranslateY, {
-        toValue: screenHeight / 2,
+        toValue: SHEET_CLOSED,
         duration: 300,
-        easing: Easing.in(Easing.cubic),
+        //easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
       RNAnimated.timing(sheetOpacity, {
         toValue: 0,
-        duration: 250,
+        duration: 200,
         useNativeDriver: true,
       }),
     ]).start(() => {
       if (callback) callback();
     });
   };
+const panResponder = useRef(
+  PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 5,
+
+    onPanResponderMove: (_, gesture) => {
+      if (gesture.dy > 0) {
+        sheetTranslateY.setValue(Math.max(SHEET_OPEN, gesture.dy));
+      }else {
+        // dragging DOWN
+        sheetTranslateY.setValue(
+          Math.min(SHEET_CLOSED, gesture.dy)
+        );
+      }
+    },
+
+    onPanResponderRelease: (_, gesture) => {
+      // If dragged up enough → OPEN
+      if (gesture.dy < -80) {
+        animateSheetIn();
+      }
+      // If dragged down enough → CLOSE
+      else if (gesture.dy > 80) {
+        animateSheetOut();
+      }
+      // Otherwise snap back
+      else {
+        animateSheetIn();
+      }
+    },
+  })
+).current;
 
   useEffect(() => {
     if (showSuccessPopup || showSharePopup) {
@@ -884,7 +918,7 @@ export default function CameraScreen({ navigation, route }) {
   const checkCameraPermission = async () => {
     try {
       const result = await check(CAMERA_PERMISSION);
-      console.log('Camera permission check result:', result);
+      // console.log('Camera permission check result:', result);
 
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
@@ -909,7 +943,7 @@ export default function CameraScreen({ navigation, route }) {
   const requestCameraPermission = async () => {
     try {
       const result = await request(CAMERA_PERMISSION);
-      console.log('Camera permission request result:', result);
+      // console.log('Camera permission request result:', result);
 
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
@@ -961,7 +995,57 @@ export default function CameraScreen({ navigation, route }) {
       Linking.openSettings();
     }
   };
+const handleShare = async (type) => {
+  try {
+    console.log('Sharing via:', type);
+    setTypeShare(type);
+    setIsSaving(true);
 
+    const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
+
+    // 1️⃣ Call backend share API FIRST
+    if (lastUploadResult) {
+      await shareApi(
+        type,
+        pageUrl,
+        user?.whatsapp,
+        lastUploadResult._id,
+        user?.name,
+        user?.email
+      );
+    }
+
+    // 2️⃣ Open native share with IMAGE
+    // const shareOptions = {
+    //   title: 'My Photo',
+    //   message: 'Check out my photo',
+    //   url: finalImageUri, // local image path
+    //   social:
+    //     type === 'whatsapp'
+    //       ? Share.Social.WHATSAPP
+    //       : Share.Social.EMAIL,
+    // };
+    setShareSuccess(true);
+    // 3️⃣ Close sheet + cleanup
+    // animateSheetOut(() => {
+    //   setShowSuccessPopup(false);
+    //   navigation.navigate('Login');
+
+    //   setTimeout(() => {
+    //     setShowPreview(false);
+    //     setFinalImageUri(null);
+    //     setCapturedPhoto(null);
+    //     setLastUploadResult(null);
+    //   }, 500);
+    // });
+
+  } catch (err) {
+    console.error('Sharing failed:', err);
+    Alert.alert('Error', 'Unable to share right now');
+  } finally {
+    setIsSaving(false);
+  }
+};
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -993,16 +1077,18 @@ export default function CameraScreen({ navigation, route }) {
     }
 
     setProcessing(true);
-    console.log(
-      'TEMPLATE OBJECT:',
-      template,
-      'cameraPosition=',
-      cameraPosition,
-    );
+    // console.log(
+    //   'TEMPLATE OBJECT:',
+    //   template,
+    //   'cameraPosition=',
+    //   cameraPosition,
+    // );
 
     try {
       // 1. Take a full-resolution photo (4:3)
       const photo = await cameraRef.current.takePhoto();
+       setFinalImageUri(`file://${photo.path}`);
+       setProcessing(true);
       // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
       let previewCapturePath = null;
       try {
@@ -1023,7 +1109,7 @@ export default function CameraScreen({ navigation, route }) {
             }, 900);
           });
 
-          if (!loaded) console.log('Warning: preview image timeout');
+          // if (!loaded) console.log('Warning: preview image timeout');
 
           previewCapturePath = await viewShotRef.current.capture({
             format: 'jpg',
@@ -1033,10 +1119,10 @@ export default function CameraScreen({ navigation, route }) {
           setPreviewImageUri(null);
           setIsCapturingPreview(false);
           setPreviewLoaded(false);
-          console.log('Captured preview for matching:', previewCapturePath);
+          // console.log('Captured preview for matching:', previewCapturePath);
         }
       } catch (err) {
-        console.log('Preview capture failed:', err);
+        //console.log('Preview capture failed:', err);
         setPreviewImageUri(null);
         setIsCapturingPreview(false);
         previewCapturePath = null;
@@ -1059,8 +1145,8 @@ export default function CameraScreen({ navigation, route }) {
         }
       }
 
-      console.log('FINAL TEMPLATE ID:', template.id);
-      console.log('OVERLAY RECT:', overlayRect);
+      // console.log('FINAL TEMPLATE ID:', template.id);
+      // console.log('OVERLAY RECT:', overlayRect);
 
       // Debug: capture the exact payload we'll pass to native so devs can inspect/copy it
       if (__DEV__) {
@@ -1090,7 +1176,7 @@ export default function CameraScreen({ navigation, route }) {
 
       setShowPreview(true);
     } catch (e) {
-      console.log(e);
+      //console.log(e);
       Alert.alert('Error', e.message);
     } finally {
       setProcessing(false);
@@ -1140,7 +1226,7 @@ export default function CameraScreen({ navigation, route }) {
     if (!hasCameraPermission) {
       return (
         <View style={styles.permissionContainer}>
-          <Icon name="camera-off" size={80} color="#fff" />
+          <Icon name="no-photography" size={80} color="#fff" />
           <Text style={styles.permissionText}>Camera Access Required</Text>
           <Text style={styles.permissionSubText}>
             Please grant camera permission to use this feature
@@ -1202,20 +1288,74 @@ export default function CameraScreen({ navigation, route }) {
     // 2. Regular Camera Mode (Matched to 3:4)
     // We render the Camera at the FULL size of the container, and place the Template Overlay on top.
     // This ensures the camera engine uses the full sensor/preview resolution.
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <CameraView
-          ref={cameraRef}
-          cameraPosition={cameraPosition}
-          onReady={() => setCameraReady(true)}
-        />
-        <TemplateOverlay
-          template={template.src}
-          onLayoutOverlay={layout => setOverlayLayout(layout)}
-          absolute
-        />
-      </View>
-    );
+    // If processing OR preview exists → show captured photo instead of camera
+// if ((processing || showPreview) && finalImageUri) {
+//   return (
+//     <View style={{ flex: 1, backgroundColor: '#000' }}>
+//       <Image
+//         source={{ uri: finalImageUri }}
+//         style={{ flex: 1 }}
+//         resizeMode="contain"
+//       />
+//       {/* 🔥 TEMPLATE ON TOP OF CAPTURED IMAGE */}
+//       <TemplateOverlay
+//         template={template.src}
+//         absolute
+//       />
+//     </View>
+//   );
+// }
+
+//     return (
+//       <View style={{ flex: 1, backgroundColor: '#000' }}>
+//         <CameraView
+//           ref={cameraRef}
+//           cameraPosition={cameraPosition}
+//           onReady={() => setCameraReady(true)}
+//         />
+//         <TemplateOverlay
+//           template={template.src}
+//           onLayoutOverlay={layout => setOverlayLayout(layout)}
+//           absolute
+//         />
+//       </View>
+//     );
+return (
+<View style={{ flex: 1, backgroundColor: '#fff' }}>
+  <CameraView
+    ref={cameraRef}
+    cameraPosition={cameraPosition}
+    onReady={() => setCameraReady(true)}
+  />
+
+  {/* 🔥 FREEZE FRAME OVER CAMERA */}
+  {(processing || showPreview) && finalImageUri && (
+    <View style={StyleSheet.absoluteFill}>
+      <Image
+        source={{ uri: finalImageUri }}
+        style={{ flex: 1 }}
+        resizeMode="cover"
+      />
+
+      {/* Template overlay */}
+      <TemplateOverlay
+        template={template.src}
+        absolute
+      />
+    </View>
+  )}
+
+  {/* Normal live template */}
+  {!processing && !showPreview && (
+    <TemplateOverlay
+      template={template.src}
+      onLayoutOverlay={layout => setOverlayLayout(layout)}
+      absolute
+    />
+  )}
+</View>
+
+)
   };
 
 
@@ -1223,11 +1363,11 @@ export default function CameraScreen({ navigation, route }) {
     try {
       setIsSaving(true);
       let uploadResult;
-      console.log('SAVING PHOTO:', {
-        user,
-        template: template.name,
-        uri: finalImageUri,
-      });
+      // console.log('SAVING PHOTO:', {
+      //   user,
+      //   template: template.name,
+      //   uri: finalImageUri,
+      // });
 
       // 1️⃣ Save locally
       await saveToGallery(finalImageUri);
@@ -1253,7 +1393,7 @@ export default function CameraScreen({ navigation, route }) {
       if (capturedPhoto) {
         uploadResult = await uploadToApi(capturedPhoto, metadata);
         setLastUploadResult(uploadResult.media);
-        console.log('Upload success:', uploadResult);
+        //console.log('Upload success:', uploadResult);
       } else {
         Alert.alert('Saved', 'Photo saved locally.');
       }
@@ -1356,7 +1496,7 @@ export default function CameraScreen({ navigation, route }) {
             }
           >
             <View style={{ position: 'relative' }}>
-              <Icon name="timer" size={28} color="#fff" />
+              <Icon name="timer" size={28} color="#000" />
               {timerSec !== 0 && (
                 <View style={styles.timerBadge}>
                   <Text style={styles.timerBadgeText}>{timerSec}</Text>
@@ -1387,7 +1527,7 @@ export default function CameraScreen({ navigation, route }) {
               setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'))
             }
           >
-            <Icon name="cached" size={32} color="#fff" />
+            <Icon name="cached" size={32} color="#000" />
           </TouchableOpacity>
         </View>
       )}
@@ -1410,7 +1550,8 @@ export default function CameraScreen({ navigation, route }) {
                   setFinalImageUri(null);
                 }}
               >
-                <Icon name="close" size={30} color="#fff" />
+                  <MaterialCommunityIcons  name="camera-retake" size={24} color="#fff" />
+                {/* <Icon name="close" size={30} color="#fff" /> */}
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]}
@@ -1427,6 +1568,7 @@ export default function CameraScreen({ navigation, route }) {
 
           {showSuccessPopup && !showSharePopup && (
             <RNAnimated.View
+            {...panResponder.panHandlers}
               style={[
                 styles.bottomSheet,
                 {
@@ -1440,9 +1582,11 @@ export default function CameraScreen({ navigation, route }) {
                 <View style={styles.successIconCircle}>
                   <Icon name="check" size={40} color="#fff" />
                 </View>
+                 {!shareSuccess ? (
+    <>
                 <Text style={styles.sheetTitle}>Success!</Text>
                 <Text style={styles.sheetSubtitle}>Photo saved in your gallery</Text>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                   style={styles.sheetActionBtn}
                   onPress={async () => {
                     try {
@@ -1488,7 +1632,110 @@ export default function CameraScreen({ navigation, route }) {
                   ) : (
                     <Text style={styles.sheetActionBtnText}>Share</Text>
                   )}
-                </TouchableOpacity>
+                </TouchableOpacity> */}
+               <View style={styles.shareRow}>
+  {/* WhatsApp */}
+  <TouchableOpacity
+    style={[
+      styles.shareIconBtn, 
+      { backgroundColor: '#25D366' },
+      isSaving && styles.disabledButton
+    ]}
+    onPress={() => handleShare('whatsapp')}
+    disabled={isSaving}
+    activeOpacity={0.7}
+  >
+    {isSaving ? (
+      <ActivityIndicator size="small" color="#fff" />
+    ) : (
+      <View style={styles.iconContainer}>
+        <MaterialCommunityIcons 
+          name="whatsapp" 
+          size={28} 
+          color="#fff" 
+        />
+      </View>
+    )}
+  </TouchableOpacity>
+
+  {/* Email */}
+  <TouchableOpacity
+    style={[
+      styles.shareIconBtn, 
+      { backgroundColor: '#EA4335' }, // Changed to Google red for email
+      isSaving && styles.disabledButton
+    ]}
+    onPress={() => handleShare('email')}
+    disabled={isSaving}
+    activeOpacity={0.7}
+  >
+    {isSaving ? (
+      <ActivityIndicator size="small" color="#fff" />
+    ) : (
+      <View style={styles.iconContainer}>
+        <Icon 
+          name="email" 
+          size={28} 
+          color="#fff" 
+        />
+      </View>
+    )}
+  </TouchableOpacity>
+</View>
+ </>
+  ) : (  <>
+      {/* ✅ WhatsApp Share Success UI */}
+     {typeShare ==="whatsapp" ?
+     (<>
+      <Text style={styles.sheetTitle}>Shared Successfully</Text>
+      <Text style={styles.sheetSubtitle}>
+        Image has been shared on WhatsApp
+      </Text>
+
+      <View style={styles.whatsappSuccessRow}>
+        <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
+        <Text style={styles.whatsappSuccessText}>
+          Sent to {user?.whatsapp}
+        </Text>
+      </View>
+      </> ):(<>
+      <Text style={styles.sheetTitle}>Shared Successfully</Text>
+      <Text style={styles.sheetSubtitle}>
+        Image has been shared on Gmail
+      </Text>
+
+      <View style={styles.whatsappSuccessRow}>
+        <Icon 
+          name="email" 
+          size={28} 
+          color="#EA4335" 
+        />
+        <Text style={styles.whatsappSuccessText}>
+          Sent to {user?.email}
+        </Text>
+      </View>
+      </>)}
+
+      <TouchableOpacity
+        style={styles.doneBtn}
+        onPress={() => {
+            animateSheetOut(() => {
+      setShowSuccessPopup(false);
+      setShowPreview(false);
+      navigation.navigate('Login');
+      setTimeout(() => {
+        setShowPreview(false);
+        setFinalImageUri(null);
+        setCapturedPhoto(null);
+        setLastUploadResult(null);
+      }, 500);
+    });
+        }}
+      >
+        <Text style={styles.doneBtnText}>Done</Text>
+      </TouchableOpacity>
+    </>
+  )}
               </View>
             </RNAnimated.View>
           )}
@@ -1523,7 +1770,7 @@ const cameraHeight = (screenWidth * 4) / 3;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: '#fff',
   },
   topBar: {
     height: 50,
@@ -1548,14 +1795,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   timerBadgeText: {
-    color: '#fff',
+    color: '#000',
     fontSize: 10,
     fontWeight: 'bold',
   },
   cameraContainer: {
     width: screenWidth,
     height: cameraHeight,
-    backgroundColor: '#000',
+    backgroundColor: '#fff',
     overflow: 'hidden',
     position: 'relative',
   },
@@ -1587,7 +1834,7 @@ const styles = StyleSheet.create({
     height: 76,
     borderRadius: 38,
     borderWidth: 4,
-    borderColor: '#fff',
+    borderColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1595,7 +1842,7 @@ const styles = StyleSheet.create({
     width: 62,
     height: 62,
     borderRadius: 31,
-    backgroundColor: '#fff',
+    backgroundColor: '#000',
   },
   countdownOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1610,7 +1857,7 @@ const styles = StyleSheet.create({
   },
   previewOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
+    backgroundColor: '#fff',
     zIndex: 100,
   },
   fullPreviewImage: {
@@ -1621,7 +1868,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     paddingBottom: 20,
   },
   previewBtn: {
@@ -1684,7 +1931,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     paddingHorizontal: 20,
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: '#fff',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
@@ -1692,9 +1939,10 @@ const styles = StyleSheet.create({
   },
   dragHandle: {
     width: 40,
-    height: 4,
+    height: 5,
     backgroundColor: '#E0E0E0',
-    borderRadius: 2,
+    borderRadius: 3,
+     alignSelf: 'center',
     marginBottom: 25,
   },
   sheetContent: {
@@ -1765,4 +2013,69 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#666',
   },
+  shareRow: {
+ flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 30, // or marginHorizontal for older RN versions
+    paddingVertical: 10,
+},
+
+  shareIconBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28, // Makes it perfectly circular
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4, // Android shadow
+    shadowColor: '#000', // iOS shadow
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    overflow: 'hidden', // Ensures content stays within rounded corners
+  },
+  iconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    height: '100%',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+shareLabel: {
+  marginTop: 6,
+  color: '#fff',
+  fontSize: 14,
+  fontWeight: '600',
+},
+whatsappSuccessRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginTop: 15,
+},
+
+whatsappSuccessText: {
+  marginLeft: 8,
+  fontSize: 15,
+  color: '#333',
+  fontWeight: '600',
+},
+
+doneBtn: {
+  marginTop: 25,
+  backgroundColor: '#25D366',
+  height: 50,
+  borderRadius: 25,
+  justifyContent: 'center',
+  alignItems: 'center',
+  width: '100%',
+},
+
+doneBtnText: {
+  color: '#fff',
+  fontSize: 16,
+  fontWeight: 'bold',
+},
+
 });
