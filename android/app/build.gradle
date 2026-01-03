@@ -113,11 +113,11 @@ android {
     }
      applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            def appName = "PhotoMergeApp"
+            def appName = "PhotoMerge"
             def buildType = variant.buildType.name
             def versionName = variant.versionName ?: "1.0"
 
-            outputFileName = "${appName}-${buildType}-v${versionName}.apk"
+            outputFileName = "${appName}.apk"
         }
     }
 }

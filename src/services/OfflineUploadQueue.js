@@ -30,10 +30,15 @@ export const processQueue = async () => {
     }
 
     try {
-      // item expected shape: { uri, userData }
-      const uri = item;
+      // item shape: { uri: {uri, name, type}, userData, createdAt }
+      const photo = item.uri;
       const userData = item.userData || {};
-      await uploadToApi(uri, userData);
+
+      if (photo && photo.uri) {
+        await uploadToApi(photo, userData);
+      } else {
+        console.warn('OfflineUploadQueue: missing photo uri in item', item);
+      }
     } catch (e) {
       console.warn('OfflineUploadQueue: upload failed, keeping item in queue', e.message || e)
       remaining.push(item) // keep failed uploads

@@ -1,226 +1,191 @@
-// // Simple upload helper used by ApiUploadService
-// // Replace UPLOAD_ENDPOINT with your real server endpoint
-// import useAxios from './useAxios';
-// import axios from 'axios';
-// const apiClient = axios.create({
-//   baseURL: 'https://api.bilimbebrandactivations.com/api/',
-// });
-
-// export async function uploadToApi(photo, metadata = {}) {
-//   //const axiosData = useAxios();
-//  if (!photo || !photo.uri) {
-//     throw new Error('Invalid photo object');
-//   }
-//   const formData = new FormData();
-//   console.log('PHOTO TO UPLOAD:', photo);
-// console.log('UPLOAD URL:', apiClient.defaults.baseURL + 'client/client/test');
-//   formData.append('photo', {
-//     uri: photo.uri,
-//     name: photo.name,
-//     type: photo.type,
-//   });
-
-//   formData.append('email', metadata.email);
-//   formData.append('whatsapp', metadata.whatsapp);
-//   formData.append('clientName', metadata.clientName);
-//   formData.append('template_name', metadata.template_name);
-//   formData.append('source', metadata.source || 'Photo Merge App');
-//   const endpoint = `client/client/${"test"}`;
-//   // Use axios for upload and let it set multipart boundary
-//   try {
-//      const response = await apiClient.post(
-//       endpoint,
-//       formData
-//     );
-//       return response.data;
-//   } catch (err) {
-//    console.log(
-//       'UPLOAD ERROR:',
-//       err.response?.data || err.message
-//     );
-//     throw err;
-//   }
-// }
-// import axios from 'axios';
-// import { Platform } from 'react-native';
-// const API_BASE = 'https://api.bilimbebrandactivations.com/api';
-// export async function uploadToApi(photo, metadata = {}) {
-//   if (!photo || !photo.uri) {
-//     throw new Error('Invalid photo object');
-//   }
-
-//   const formData = new FormData();
-
-//   console.log('PHOTO TO UPLOAD:', photo);
-
-//    formData.append('photo', {
-//     uri:
-//       Platform.OS === 'ios'
-//         ? photo.uri.replace('file://', '')
-//         : photo.uri,
-//     name: photo.name || 'photo.jpg',
-//     type: photo.type || 'image/jpeg',
-//   });
-//  formData.append('email', metadata.email ?? '');
-//   formData.append('whatsapp', metadata.whatsapp ?? '');
-//   formData.append('clientName', metadata.clientName ?? '');
-//   formData.append('template_name', metadata.template_name ?? '');
-//   formData.append('source', metadata.source ?? 'Photo Merge App');
-//   try {
-//      const response = await axios.post(
-//     `${API_BASE}/client/client/test`,
-//     formData,
-//     {
-//       timeout: 60000,
-//        headers: {
-//           Accept: 'application/json',
-//           // ❌ DO NOT set Content-Type manually
-//         },
-//           transformRequest: (data) => data, // 👈 IMPORTANT for RN
-//     }
-//   );
-// console.log('UPLOAD RESPONSE:', response.data);
-//   return response.data;
-//   } catch (error) {
-//  console.error(
-//       'UPLOAD FAILED:',
-//       error.response?.data || error.message
-//     );
-//     throw error;
-//   }
-// }
-// import { Platform } from 'react-native';
-
-// const API_URL =
-//   'https://api.bilimbebrandactivations.com/api/client/client/test';
-
-// export async function uploadToApi(photo, metadata = {}) {
-//   const formData = new FormData();
-
-//   formData.append('photo', {
-//     uri: photo.uri,
-//     name: photo.name || 'photo.jpg',
-//     type: photo.type || 'image/png',
-//   });
-
-//   formData.append('email', metadata.email || '');
-//   formData.append('whatsapp', metadata.whatsapp || '');
-//   formData.append('clientName', metadata.clientName || '');
-//   formData.append('template_name', metadata.template_name || '');
-//   formData.append('source', metadata.source || 'Photo Merge App');
-
-//   const response = await fetch(API_URL, {
-//     method: 'POST',
-//     headers: {
-//       Accept: 'application/json',
-//       // ❌ DO NOT SET Content-Type
-//     },
-//     body: formData,
-//   });
-
-//   const data = await response.json();
-//   return data;
-// }
 import { Platform } from 'react-native';
 import RNFetchBlob from 'react-native-blob-util';
+import RNFS from 'react-native-fs';
 import useAxios from './useAxios';
+
 const API_URL =
   'https://api.bilimbebrandactivations.com/api/client/client/test';
 
-// export const uploadToApi = async (photo, metadata = {}) => {
-//   try {
-//     const formData = new FormData();
+/**
+ * Normalize file path for different platforms and formats
+ */
+const normalizeFilePath = (uri) => {
+  if (!uri) return null;
 
-//     if (photo?.uri) {
-//       let uri = photo.uri;
+  let normalizedPath = uri;
 
-//       // iOS fix
-//       if (Platform.OS === 'ios' && uri.startsWith('file://')) {
-//         uri = uri.replace('file://', '');
-//       }
+  // Remove file:// prefix if present
+  if (normalizedPath.startsWith('file://')) {
+    normalizedPath = normalizedPath.replace('file://', '');
+  }
 
-//       formData.append('photo', {
-//         uri,
-//         name: photo.name || `photo_${Date.now()}.jpg`,
-//         type: photo.type || 'image/jpeg',
-//       });
-//     }
+  // For Android, ensure path starts with /
+  if (Platform.OS === 'android' && !normalizedPath.startsWith('/')) {
+    normalizedPath = '/' + normalizedPath;
+  }
 
-//     // Append other fields
-//     formData.append('clientName', metadata.clientName || '');
-//     formData.append('whatsapp', metadata.whatsapp || '');
-//     formData.append('email', metadata.email || '');
-//     formData.append('template_name', metadata.template_name || '');
-//     formData.append('source', metadata.source || 'Photo Merge App');
+  console.log('[Upload] Normalized path:', { original: uri, normalized: normalizedPath });
+  return normalizedPath;
+};
 
-//     const response = await fetch(API_URL, {
-//       method: 'POST',
-//       headers: {
-//         Accept: 'application/json',
-//         // ❌ Do NOT set Content-Type manually
-//       },
-//       body: formData,
-//     });
-
-//     if (!response.ok) {
-//       throw new Error(`HTTP error! status: ${response.status}`);
-//     }
-
-//     const data = await response.json();
-//     return data;
-//   } catch (err) {
-//     console.error('Upload error:', err);
-//     throw err;
-//   }
-// };
-export const uploadToApi = async (photo, metadata = {}) => {
+/**
+ * Validate photo file exists and is accessible
+ */
+const validatePhotoFile = async (uri) => {
   try {
-    if (!photo?.uri) throw new Error('No photo to upload');
+    const normalizedPath = normalizeFilePath(uri);
 
-    const uploadUri =
-      Platform.OS === 'ios' ? photo.uri.replace('file://', '') : photo.uri;
+    if (!normalizedPath) {
+      throw new Error('Invalid file path: path is null or empty');
+    }
 
-    const data = [
+    // Check if file exists
+    const exists = await RNFS.exists(normalizedPath);
+    if (!exists) {
+      throw new Error(`File does not exist at path: ${normalizedPath}`);
+    }
+
+    // Get file info
+    const fileInfo = await RNFS.stat(normalizedPath);
+    console.log('[Upload] File validation:', {
+      path: normalizedPath,
+      size: fileInfo.size,
+      isFile: fileInfo.isFile(),
+    });
+
+    // Check if file is empty
+    if (fileInfo.size === 0) {
+      throw new Error('File is empty (0 bytes)');
+    }
+
+    // Check if file is too large (e.g., > 50MB)
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (fileInfo.size > maxSize) {
+      throw new Error(`File is too large: ${(fileInfo.size / 1024 / 1024).toFixed(2)}MB (max 50MB)`);
+    }
+
+    return { normalizedPath, fileInfo };
+  } catch (error) {
+    console.error('[Upload] File validation failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Check if error is retryable (network issues, timeouts, etc.)
+ */
+const isRetryableError = (error) => {
+  const retryableMessages = [
+    'network',
+    'timeout',
+    'connection',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'ENOTFOUND',
+  ];
+
+  const errorMessage = error.message?.toLowerCase() || '';
+  return retryableMessages.some(msg => errorMessage.includes(msg));
+};
+
+/**
+ * Upload photo to API with robust error handling
+ */
+export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
+  const MAX_RETRIES = 2;
+
+  try {
+    console.log('[Upload] Starting upload attempt', {
+      attempt: retryCount + 1,
+      platform: Platform.OS,
+      photoUri: photo?.uri,
+      metadata,
+    });
+
+    if (!photo?.uri) {
+      throw new Error('No photo to upload: photo.uri is missing');
+    }
+
+    // Validate file exists and get normalized path
+    const { normalizedPath, fileInfo } = await validatePhotoFile(photo.uri);
+
+    // Prepare upload data
+    const uploadData = [
       {
         name: 'photo',
-        filename: photo.name,
-        type: photo.type || 'image/jpeg',
-        data: RNFetchBlob.wrap(uploadUri),
+        filename: photo.name || `photo_${Date.now()}.png`,
+        type: photo.type || 'image/png',
+        data: RNFetchBlob.wrap(normalizedPath),
       },
-      { name: 'clientName', data: metadata.clientName || '' },
-      { name: 'whatsapp', data: metadata.whatsapp || '' },
-      { name: 'email', data: metadata.email || '' },
-      { name: 'template_name', data: metadata.template_name || '' },
-      { name: 'source', data: metadata.source || 'Photo Merge App' },
+      { name: 'clientName', data: String(metadata.clientName || '') },
+      { name: 'whatsapp', data: String(metadata.whatsapp || '') },
+      { name: 'email', data: String(metadata.email || '') },
+      { name: 'template_name', data: String(metadata.template_name || '') },
+      { name: 'source', data: String(metadata.source || 'Photo Merge App') },
+      { name: 'adminid', data: String(metadata.adminid || '') },
+      { name: 'branchid', data: String(metadata.branchid || '') },
     ];
 
-    const response = await RNFetchBlob.fetch(
+    console.log('[Upload] Uploading file:', {
+      path: normalizedPath,
+      size: `${(fileInfo.size / 1024).toFixed(2)}KB`,
+      filename: photo.name,
+      type: photo.type,
+    });
+
+    // Perform upload with increased timeout
+    const response = await RNFetchBlob.config({
+      timeout: 120000, // 120 seconds timeout
+    }).fetch(
       'POST',
-      'https://api.bilimbebrandactivations.com/api/client/client/test',
+      API_URL,
       {
         Accept: 'application/json',
-        // ❌ Do NOT set Content-Type manually
+        // Content-Type is automatically set by RNFetchBlob
       },
-      data,
+      uploadData,
     );
 
     const responseText = await response.text();
-    // console.log('UPLOAD RAW RESPONSE:', responseText);
+    console.log('[Upload] Response received:', {
+      status: response.info().status,
+      responseLength: responseText.length,
+    });
 
+    // Parse response
     try {
       const respJson = JSON.parse(responseText);
+      console.log('[Upload] Upload successful:', respJson);
       return respJson;
-    } catch (e) {
-      console.error('Failed to parse upload response:', e);
+    } catch (parseError) {
+      console.error('[Upload] Failed to parse response:', parseError);
       throw new Error(
-        `Upload server returned non-JSON: ${responseText.substring(0, 50)}`,
+        `Server returned invalid JSON. Status: ${response.info().status}, Response: ${responseText.substring(0, 100)}`,
       );
     }
-  } catch (err) {
-    console.error('Upload error:', err);
-    throw err;
+  } catch (error) {
+    console.error('[Upload] Upload failed:', {
+      attempt: retryCount + 1,
+      error: error.message,
+      stack: error.stack,
+    });
+
+    // Retry logic for network errors
+    if (retryCount < MAX_RETRIES && isRetryableError(error)) {
+      console.log(`[Upload] Retrying upload (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+      return uploadToApi(photo, metadata, retryCount + 1);
+    }
+
+    // Enhance error message with more context
+    const enhancedError = new Error(
+      `Upload failed: ${error.message}\nPlatform: ${Platform.OS}\nAttempt: ${retryCount + 1}/${MAX_RETRIES + 1}`,
+    );
+    enhancedError.originalError = error;
+    throw enhancedError;
   }
 };
+
 export const shareApi = async (type, link, whatsappNumber, id, name, email) => {
   const axiosData = useAxios();
   try {
@@ -236,7 +201,7 @@ export const shareApi = async (type, link, whatsappNumber, id, name, email) => {
     } else {
       const responsewhatsapp = axiosData.post(
         `client/client/share/${whatsappNumber}`,
-        { typeSend: type, viewUrl: link,name: name, id: id },
+        { typeSend: type, viewUrl: link, name: name, id: id },
         {
           headers: { 'Content-Type': 'application/json' },
         },

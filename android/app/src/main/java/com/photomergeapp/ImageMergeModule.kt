@@ -254,11 +254,18 @@ class ImageMergeModule(
 
 
 
-      // Load template asset from app assets
-      val inputStream = context.assets.open(templateAssetName)
-      val templateBitmap = BitmapFactory.decodeStream(inputStream)
-        ?: throw Exception("Template bitmap is null")
-      inputStream.close()
+      // Load template asset from app assets or file path
+      val templateBitmap = if (templateAssetName.startsWith("/")) {
+        BitmapFactory.decodeFile(templateAssetName)
+      } else {
+        var isStream: java.io.InputStream? = null
+        try {
+          isStream = context.assets.open(templateAssetName)
+          BitmapFactory.decodeStream(isStream)
+        } finally {
+          isStream?.close()
+        }
+      } ?: throw Exception("Template bitmap is null: $templateAssetName")
 
 
       // If preview provided, perform candidate-based auto-selection of transform for front camera
@@ -379,9 +386,17 @@ class ImageMergeModule(
         Log.w("ImageMerge", "Failed to enforce final horizontal mirror: ${e.message}")
       }
 
-      // Create result bitmap at the template's intrinsic pixel size (so output dimensions match the template)
-      val outW = templateBitmap.width
-      val outH = templateBitmap.height
+      // Map photo and template dimensions
+      val pw = photoBitmap.width.toFloat()
+      val ph = photoBitmap.height.toFloat()
+      val tw = templateBitmap.width.toFloat()
+      val th = templateBitmap.height.toFloat()
+
+      // Create result bitmap at a size that preserves the original photo's resolution
+      // We scale the template's intrinsic bounds up until it "covers" the photo's resolution.
+      val scaleToPreservePhoto = Math.max(pw / tw, ph / th)
+      val outW = (tw * scaleToPreservePhoto).toInt()
+      val outH = (th * scaleToPreservePhoto).toInt()
 
       // Predeclare resultBitmap so both render branches can assign to it
       var resultBitmap: Bitmap? = null
@@ -410,6 +425,7 @@ class ImageMergeModule(
             overlayX = (fx * outW).toInt().coerceIn(0, outW)
           }
           overlayY = (fy * outH).toInt().coerceIn(0, outH)
+          overlayX = (fx * outW).toInt().coerceIn(0, outW) // Redundant but safe
           overlayW = (fw * outW).toInt().coerceIn(0, outW - overlayX)
           overlayH = (fh * outH).toInt().coerceIn(0, outH - overlayY)
 
@@ -420,94 +436,50 @@ class ImageMergeModule(
       }
 
       // Use high-quality rendering pipeline (upscale -> draw -> progressive downscale -> sharpen)
-      val renderScale = 2
-      Log.d("ImageMerge", "Using high-quality render pipeline (renderScale=2)")
+      // Note: we use renderScale=1 because outW/outH are already set to full photo resolution (e.g. 4000px)
+      val renderScale = 1
+      Log.d("ImageMerge", "Using high-quality render pipeline (renderScale=1, resolution=${outW}x${outH})")
       val qualityPaint = Paint()
       qualityPaint.isFilterBitmap = true
       qualityPaint.isAntiAlias = true
 
-      if (renderScale > 1) {
-        val hiW = outW * renderScale
-        val hiH = outH * renderScale
-        val hiBmp = Bitmap.createBitmap(hiW, hiH, Bitmap.Config.ARGB_8888)
-        val hiCanvas = Canvas(hiBmp)
+      val hiW = outW * renderScale
+      val hiH = outH * renderScale
+      val hiBmp = Bitmap.createBitmap(hiW, hiH, Bitmap.Config.ARGB_8888)
+      val hiCanvas = Canvas(hiBmp)
 
-        // scale the canvas so we can reuse our draw logic at template coordinates
+      // scale the canvas by renderScale
+      if (renderScale != 1) {
         hiCanvas.scale(renderScale.toFloat(), renderScale.toFloat())
+      }
 
-        // Draw photo (using same cover logic)
-        val pw = photoBitmap.width.toFloat()
-        val ph = photoBitmap.height.toFloat()
-        val scale = maxOf(outW / pw, outH / ph)
-        val scaledWidth = pw * scale
-        val scaledHeight = ph * scale
-        val dx = (outW - scaledWidth) / 2f
-        val dy = (outH - scaledHeight) / 2f
+      // Draw photo using cover logic
+      val photoScale = Math.max(outW.toFloat() / pw, outH.toFloat() / ph)
+      val scaledPhotoW = pw * photoScale
+      val scaledPhotoH = ph * photoScale
+      val photoDx = (outW - scaledPhotoW) / 2f
+      val photoDy = (outH - scaledPhotoH) / 2f
 
-        val drawMatrix = Matrix()
-        drawMatrix.postScale(scale, scale)
-        drawMatrix.postTranslate(dx, dy)
+      val photoMatrix = Matrix()
+      photoMatrix.postScale(photoScale, photoScale)
+      photoMatrix.postTranslate(photoDx, photoDy)
+      hiCanvas.drawBitmap(photoBitmap, photoMatrix, qualityPaint)
 
-        hiCanvas.drawBitmap(photoBitmap, drawMatrix, qualityPaint)
-        hiCanvas.drawBitmap(templateBitmap, 0f, 0f, qualityPaint)
+      // Draw template scaled to fit the output frame
+      val templateMatrix = Matrix()
+      templateMatrix.postScale(outW.toFloat() / tw, outH.toFloat() / th)
+      hiCanvas.drawBitmap(templateBitmap, templateMatrix, qualityPaint)
 
-
-        // Downscale to final size using progressive multistep downscale for higher quality
+      // Result logic
+      if (renderScale > 1) {
+        // Downscale to final size if renderScale was > 1
         val finalBmp = progressiveDownscale(hiBmp, outW, outH)
         if (!hiBmp.isRecycled && finalBmp !== hiBmp) hiBmp.recycle()
-
-        // Apply a small sharpen filter to restore perceived edge contrast after resampling
-        // val sharpened = applySharpen(finalBmp)
-        // if (sharpened !== finalBmp && !finalBmp.isRecycled) finalBmp.recycle()
-
-        // Assign to predeclared result
-        resultBitmap = finalBmp // sharpened
-
+        resultBitmap = finalBmp
         Log.d("ImageMerge", "Rendered hi-res ${hiW}x${hiH} and downscaled to ${outW}x${outH}")
-
-        // Continue with saving 'resultBitmap' below
-        
-        // Draw diagnostic variant using resultBitmap dimensions if needed later
       } else {
-        // Legacy exact-draw behavior: no filter/antialiasing for pixel-accurate draw
-        val rb = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(rb)
-
-        try {
-          val pw = photoBitmap.width.toFloat()
-          val ph = photoBitmap.height.toFloat()
-          val scale = maxOf(outW / pw, outH / ph)
-          val scaledWidth = pw * scale
-          val scaledHeight = ph * scale
-          val dx = (outW - scaledWidth) / 2f
-          val dy = (outH - scaledHeight) / 2f
-
-          val drawMatrix = Matrix()
-          drawMatrix.postScale(scale, scale)
-          drawMatrix.postTranslate(dx, dy)
-
-          // Use null paint to avoid any bitmap filtering or anti-aliasing — this matches the old output
-          canvas.drawBitmap(photoBitmap, drawMatrix, null)
-          Log.d("ImageMerge", "Drew photo (legacy) onto canvas (template-size): ${outW}x${outH} scale=$scale scaled=${scaledWidth}x${scaledHeight} dx=$dx dy=$dy")
-        } catch (e: Exception) {
-          Log.w("ImageMerge", "Failed to draw scaled photo onto template-size canvas: ${e.message}")
-          canvas.drawBitmap(photoBitmap, 0f, 0f, null)
-        }
-
-        // Draw the template onto the output without filtering to preserve exact pixels
-        try {
-          if (overlayW > 0 && overlayH > 0) {
-            val scaledTemplate = Bitmap.createScaledBitmap(templateBitmap, overlayW, overlayH, false)
-            canvas.drawBitmap(scaledTemplate, overlayX.toFloat(), overlayY.toFloat(), null)
-            scaledTemplate.recycle()
-          } else {
-            canvas.drawBitmap(templateBitmap, 0f, 0f, null)
-          }
-        } catch (e: Exception) {
-          Log.w("ImageMerge", "Failed to draw template onto output canvas: ${e.message}")
-        }
-
-        resultBitmap = rb
+        resultBitmap = hiBmp
+        Log.d("ImageMerge", "Rendered directly at target resolution: ${outW}x${outH}")
       }
 
       if (resultBitmap == null) throw Exception("Rendering failed: result bitmap is null")

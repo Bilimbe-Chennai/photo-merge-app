@@ -147,6 +147,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import LoginScreen from "./src/screens/LoginScreen";
+import AuthScreen from "./src/screens/AuthScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import PreviewScreen from "./src/screens/PreviewScreen";
 import ShareScreen from "./src/screens/ShareScreen";
@@ -169,6 +170,7 @@ function ShareOnlyStack({ shareId }) {
 function MainAppStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="Camera" component={CameraScreen} />
       <Stack.Screen name="Preview" component={PreviewScreen} />
@@ -184,6 +186,7 @@ const linking = {
   config: {
     screens: {
       Share: 'share/:photoId',
+      Auth: 'auth',
       Login: 'login',
       Camera: 'camera',
     },
@@ -192,8 +195,8 @@ const linking = {
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(true);
- const [launchMode, setLaunchMode] = useState(null); // 'share' | 'main'
-const [shareId, setShareId] = useState(null);
+  const [launchMode, setLaunchMode] = useState(null); // 'share' | 'main'
+  const [shareId, setShareId] = useState(null);
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.5)).current;
@@ -221,30 +224,30 @@ const [shareId, setShareId] = useState(null);
       ])
     ).start();
   };
-useEffect(() => {
-  const handleUrl = (url) => {
-    if (!url) {
-      setLaunchMode("main");
-      return;
-    }
+  useEffect(() => {
+    const handleUrl = (url) => {
+      if (!url) {
+        setLaunchMode("main");
+        return;
+      }
 
-    const match = url.match(SHARE_ROUTE_REGEX);
-    if (match) {
-      setShareId(match[1]);
-      setLaunchMode("share");
-    } else {
-      setLaunchMode("main");
-    }
-  };
+      const match = url.match(SHARE_ROUTE_REGEX);
+      if (match) {
+        setShareId(match[1]);
+        setLaunchMode("share");
+      } else {
+        setLaunchMode("main");
+      }
+    };
 
-  Linking.getInitialURL().then(handleUrl);
+    Linking.getInitialURL().then(handleUrl);
 
-  const sub = Linking.addEventListener("url", ({ url }) => {
-    handleUrl(url);
-  });
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      handleUrl(url);
+    });
 
-  return () => sub.remove();
-}, []);
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     startShimmerAnimation();
@@ -423,15 +426,15 @@ useEffect(() => {
       <SafeAreaProvider>
         <SafeAreaView style={styles.mainContainer}>
           {/* <ClientPageUser /> */}
-         {launchMode && (
-  <NavigationContainer>
-    {launchMode === "share" ? (
-      <ShareOnlyStack shareId={shareId} />
-    ) : (
-      <MainAppStack />
-    )}
-  </NavigationContainer>
-)}
+          {launchMode && (
+            <NavigationContainer>
+              {launchMode === "share" ? (
+                <ShareOnlyStack shareId={shareId} />
+              ) : (
+                <MainAppStack />
+              )}
+            </NavigationContainer>
+          )}
         </SafeAreaView>
       </SafeAreaProvider>
     </>

@@ -783,6 +783,7 @@ import TemplateSlider from '../components/TemplateSlider';
 import { mergeCameraWithTemplate } from '../services/ImageMergeService';
 import { saveToGallery } from '../services/GalleryService';
 import { TEMPLATES } from '../constants/templates';
+import { fetchTemplates, transformApiTemplate } from '../services/TemplateService';
 import CaptureButton from '../components/CaptureButton';
 import NetInfo from '@react-native-community/netinfo';
 import { processQueue } from '../services/OfflineUploadQueue';
@@ -799,12 +800,16 @@ const CAMERA_PERMISSION = Platform.select({
   android: PERMISSIONS.ANDROID.CAMERA,
 });
 
+
 export default function CameraScreen({ navigation, route }) {
   const cameraRef = useRef(null);
   const viewShotRef = useRef(null);
+  const [templates, setTemplates] = useState(TEMPLATES);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState(null);
   const [template, setTemplate] = useState(TEMPLATES[0]);
   const [cameraReady, setCameraReady] = useState(false);
-    const [typeShare, setTypeShare] = useState("whatsapp");
+  const [typeShare, setTypeShare] = useState("whatsapp");
   const [cameraPosition, setCameraPosition] = useState('front');
   const [timerSec, setTimerSec] = useState(0);
   const [countdown, setCountdown] = useState(0);
@@ -823,7 +828,7 @@ export default function CameraScreen({ navigation, route }) {
   const [isSaving, setIsSaving] = useState(false);
   const [hasCameraPermission, setHasCameraPermission] = useState(false);
   const [isCheckingPermission, setIsCheckingPermission] = useState(true);
-const [shareSuccess, setShareSuccess] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
   const user =
     route && route.params && route.params.user ? route.params.user : {};
   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
@@ -831,9 +836,9 @@ const [shareSuccess, setShareSuccess] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState(null);
-// Positions
-const SHEET_CLOSED = screenHeight / 2; // half hidden
-const SHEET_OPEN = 0;  
+  // Positions
+  const SHEET_CLOSED = screenHeight / 2; // half hidden
+  const SHEET_OPEN = 0;
   // Animation Values
   const sheetTranslateY = useRef(new RNAnimated.Value(SHEET_CLOSED)).current;
   const sheetOpacity = useRef(new RNAnimated.Value(0)).current;
@@ -871,38 +876,38 @@ const SHEET_OPEN = 0;
       if (callback) callback();
     });
   };
-const panResponder = useRef(
-  PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 5,
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 5,
 
-    onPanResponderMove: (_, gesture) => {
-      if (gesture.dy > 0) {
-        sheetTranslateY.setValue(Math.max(SHEET_OPEN, gesture.dy));
-      }else {
-        // dragging DOWN
-        sheetTranslateY.setValue(
-          Math.min(SHEET_CLOSED, gesture.dy)
-        );
-      }
-    },
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(Math.max(SHEET_OPEN, gesture.dy));
+        } else {
+          // dragging DOWN
+          sheetTranslateY.setValue(
+            Math.min(SHEET_CLOSED, gesture.dy)
+          );
+        }
+      },
 
-    onPanResponderRelease: (_, gesture) => {
-      // If dragged up enough → OPEN
-      if (gesture.dy < -80) {
-        animateSheetIn();
-      }
-      // If dragged down enough → CLOSE
-      else if (gesture.dy > 80) {
-        animateSheetOut();
-      }
-      // Otherwise snap back
-      else {
-        animateSheetIn();
-      }
-    },
-  })
-).current;
+      onPanResponderRelease: (_, gesture) => {
+        // If dragged up enough → OPEN
+        if (gesture.dy < -80) {
+          animateSheetIn();
+        }
+        // If dragged down enough → CLOSE
+        else if (gesture.dy > 80) {
+          animateSheetOut();
+        }
+        // Otherwise snap back
+        else {
+          animateSheetIn();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     if (showSuccessPopup || showSharePopup) {
@@ -914,6 +919,46 @@ const panResponder = useRef(
   useEffect(() => {
     checkCameraPermission();
   }, []);
+
+  // Fetch templates from API on mount
+  useEffect(() => {
+    const loadTemplates = async () => {
+      try {
+        setTemplatesLoading(true);
+        setTemplatesError(null);
+
+        // Fetch templates with filters from user details
+        const apiTemplates = await fetchTemplates({
+          source: 'photo merge app',
+          adminid: user?.adminid,
+          branchid: user?.branchid
+        });
+
+        if (apiTemplates && apiTemplates.length > 0) {
+          // Transform API templates to app template format and flatten if multiple photos per template
+          const transformedTemplates = apiTemplates.flatMap(transformApiTemplate);
+          setTemplates(transformedTemplates);
+
+          // Set first template as selected if available
+          if (transformedTemplates.length > 0) {
+            setTemplate(transformedTemplates[0]);
+          }
+        } else {
+          // If no templates from API, keep using local TEMPLATES
+          console.log('No templates from API, using local templates');
+        }
+      } catch (error) {
+        console.error('Failed to fetch templates:', error);
+        setTemplatesError(error.message);
+        // Keep using local TEMPLATES as fallback
+      } finally {
+        setTemplatesLoading(false);
+      }
+    };
+
+    loadTemplates();
+  }, []);
+
 
   const checkCameraPermission = async () => {
     try {
@@ -995,57 +1040,57 @@ const panResponder = useRef(
       Linking.openSettings();
     }
   };
-const handleShare = async (type) => {
-  try {
-    console.log('Sharing via:', type);
-    setTypeShare(type);
-    setIsSaving(true);
+  const handleShare = async (type) => {
+    try {
+      console.log('Sharing via:', type);
+      setTypeShare(type);
+      setIsSaving(true);
 
-    const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
+      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
 
-    // 1️⃣ Call backend share API FIRST
-    if (lastUploadResult) {
-      await shareApi(
-        type,
-        pageUrl,
-        user?.whatsapp,
-        lastUploadResult._id,
-        user?.name,
-        user?.email
-      );
+      // 1️⃣ Call backend share API FIRST
+      if (lastUploadResult) {
+        await shareApi(
+          type,
+          pageUrl,
+          user?.whatsapp,
+          lastUploadResult._id,
+          user?.name,
+          user?.email
+        );
+      }
+
+      // 2️⃣ Open native share with IMAGE
+      // const shareOptions = {
+      //   title: 'My Photo',
+      //   message: 'Check out my photo',
+      //   url: finalImageUri, // local image path
+      //   social:
+      //     type === 'whatsapp'
+      //       ? Share.Social.WHATSAPP
+      //       : Share.Social.EMAIL,
+      // };
+      setShareSuccess(true);
+      // 3️⃣ Close sheet + cleanup
+      // animateSheetOut(() => {
+      //   setShowSuccessPopup(false);
+      //   navigation.navigate('Login');
+
+      //   setTimeout(() => {
+      //     setShowPreview(false);
+      //     setFinalImageUri(null);
+      //     setCapturedPhoto(null);
+      //     setLastUploadResult(null);
+      //   }, 500);
+      // });
+
+    } catch (err) {
+      console.error('Sharing failed:', err);
+      Alert.alert('Error', 'Unable to share right now');
+    } finally {
+      setIsSaving(false);
     }
-
-    // 2️⃣ Open native share with IMAGE
-    // const shareOptions = {
-    //   title: 'My Photo',
-    //   message: 'Check out my photo',
-    //   url: finalImageUri, // local image path
-    //   social:
-    //     type === 'whatsapp'
-    //       ? Share.Social.WHATSAPP
-    //       : Share.Social.EMAIL,
-    // };
-    setShareSuccess(true);
-    // 3️⃣ Close sheet + cleanup
-    // animateSheetOut(() => {
-    //   setShowSuccessPopup(false);
-    //   navigation.navigate('Login');
-
-    //   setTimeout(() => {
-    //     setShowPreview(false);
-    //     setFinalImageUri(null);
-    //     setCapturedPhoto(null);
-    //     setLastUploadResult(null);
-    //   }, 500);
-    // });
-
-  } catch (err) {
-    console.error('Sharing failed:', err);
-    Alert.alert('Error', 'Unable to share right now');
-  } finally {
-    setIsSaving(false);
-  }
-};
+  };
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
@@ -1087,8 +1132,8 @@ const handleShare = async (type) => {
     try {
       // 1. Take a full-resolution photo (4:3)
       const photo = await cameraRef.current.takePhoto();
-       setFinalImageUri(`file://${photo.path}`);
-       setProcessing(true);
+      setFinalImageUri(`file://${photo.path}`);
+      setProcessing(true);
       // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
       let previewCapturePath = null;
       try {
@@ -1160,14 +1205,14 @@ const handleShare = async (type) => {
 
       const mergedPath = await mergeCameraWithTemplate(
         photo.path,
-        template.id,
+        template,
         overlayRect,
         previewCapturePath,
       );
       const uploadPhoto = {
         uri: `file://${mergedPath}`,
-        name: `photo_${Date.now()}.jpg`,
-        type: 'image/jpeg',
+        name: `photo_${Date.now()}.png`,
+        type: 'image/png',
       };
 
       // Defer saving: show preview and let user confirm (tick) to save/upload
@@ -1289,73 +1334,73 @@ const handleShare = async (type) => {
     // We render the Camera at the FULL size of the container, and place the Template Overlay on top.
     // This ensures the camera engine uses the full sensor/preview resolution.
     // If processing OR preview exists → show captured photo instead of camera
-// if ((processing || showPreview) && finalImageUri) {
-//   return (
-//     <View style={{ flex: 1, backgroundColor: '#000' }}>
-//       <Image
-//         source={{ uri: finalImageUri }}
-//         style={{ flex: 1 }}
-//         resizeMode="contain"
-//       />
-//       {/* 🔥 TEMPLATE ON TOP OF CAPTURED IMAGE */}
-//       <TemplateOverlay
-//         template={template.src}
-//         absolute
-//       />
-//     </View>
-//   );
-// }
+    // if ((processing || showPreview) && finalImageUri) {
+    //   return (
+    //     <View style={{ flex: 1, backgroundColor: '#000' }}>
+    //       <Image
+    //         source={{ uri: finalImageUri }}
+    //         style={{ flex: 1 }}
+    //         resizeMode="contain"
+    //       />
+    //       {/* 🔥 TEMPLATE ON TOP OF CAPTURED IMAGE */}
+    //       <TemplateOverlay
+    //         template={template.src}
+    //         absolute
+    //       />
+    //     </View>
+    //   );
+    // }
 
-//     return (
-//       <View style={{ flex: 1, backgroundColor: '#000' }}>
-//         <CameraView
-//           ref={cameraRef}
-//           cameraPosition={cameraPosition}
-//           onReady={() => setCameraReady(true)}
-//         />
-//         <TemplateOverlay
-//           template={template.src}
-//           onLayoutOverlay={layout => setOverlayLayout(layout)}
-//           absolute
-//         />
-//       </View>
-//     );
-return (
-<View style={{ flex: 1, backgroundColor: '#fff' }}>
-  <CameraView
-    ref={cameraRef}
-    cameraPosition={cameraPosition}
-    onReady={() => setCameraReady(true)}
-  />
+    //     return (
+    //       <View style={{ flex: 1, backgroundColor: '#000' }}>
+    //         <CameraView
+    //           ref={cameraRef}
+    //           cameraPosition={cameraPosition}
+    //           onReady={() => setCameraReady(true)}
+    //         />
+    //         <TemplateOverlay
+    //           template={template.src}
+    //           onLayoutOverlay={layout => setOverlayLayout(layout)}
+    //           absolute
+    //         />
+    //       </View>
+    //     );
+    return (
+      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+        <CameraView
+          ref={cameraRef}
+          cameraPosition={cameraPosition}
+          onReady={() => setCameraReady(true)}
+        />
 
-  {/* 🔥 FREEZE FRAME OVER CAMERA */}
-  {(processing || showPreview) && finalImageUri && (
-    <View style={StyleSheet.absoluteFill}>
-      <Image
-        source={{ uri: finalImageUri }}
-        style={{ flex: 1 }}
-        resizeMode="cover"
-      />
+        {/* 🔥 FREEZE FRAME OVER CAMERA */}
+        {(processing || showPreview) && finalImageUri && (
+          <View style={StyleSheet.absoluteFill}>
+            <Image
+              source={{ uri: finalImageUri }}
+              style={{ flex: 1 }}
+              resizeMode="cover"
+            />
 
-      {/* Template overlay */}
-      <TemplateOverlay
-        template={template.src}
-        absolute
-      />
-    </View>
-  )}
+            {/* Template overlay */}
+            <TemplateOverlay
+              template={template.src}
+              absolute
+            />
+          </View>
+        )}
 
-  {/* Normal live template */}
-  {!processing && !showPreview && (
-    <TemplateOverlay
-      template={template.src}
-      onLayoutOverlay={layout => setOverlayLayout(layout)}
-      absolute
-    />
-  )}
-</View>
+        {/* Normal live template */}
+        {!processing && !showPreview && (
+          <TemplateOverlay
+            template={template.src}
+            onLayoutOverlay={layout => setOverlayLayout(layout)}
+            absolute
+          />
+        )}
+      </View>
 
-)
+    )
   };
 
 
@@ -1363,14 +1408,18 @@ return (
     try {
       setIsSaving(true);
       let uploadResult;
-      // console.log('SAVING PHOTO:', {
-      //   user,
-      //   template: template.name,
-      //   uri: finalImageUri,
-      // });
 
-      // 1️⃣ Save locally
+      console.log('[CameraScreen] Starting save process:', {
+        hasPhoto: !!capturedPhoto,
+        photoUri: capturedPhoto?.uri,
+        user: user?.name,
+        template: template?.id || template?.name,
+      });
+
+      // 1️⃣ Save locally first
+      console.log('[CameraScreen] Saving to gallery...');
       await saveToGallery(finalImageUri);
+      console.log('[CameraScreen] Saved to gallery successfully');
 
       // 2️⃣ Try API upload (include user data mapped to API fields)
       // const uploadUserData = {
@@ -1386,27 +1435,41 @@ return (
         clientName: user?.name || '',
         email: user?.email || '',
         whatsapp: user?.whatsapp || '',
-        template_name: template?.id || 'birthday_template_1',
+        template_name: template?.templatename || template?._id || 'birthday_template_1',
         source: 'Photo Merge App',
+        adminid: user?.adminid || '',
+        branchid: user?.branchid || '',
       };
 
-      if (capturedPhoto) {
+      if (capturedPhoto && capturedPhoto.uri) {
+        console.log('[CameraScreen] Starting upload with metadata:', metadata);
         uploadResult = await uploadToApi(capturedPhoto, metadata);
         setLastUploadResult(uploadResult.media);
-        //console.log('Upload success:', uploadResult);
+        console.log('[CameraScreen] Upload successful:', uploadResult);
       } else {
-        Alert.alert('Saved', 'Photo saved locally.');
+        console.warn('[CameraScreen] No capturedPhoto available, skipping upload');
+        Alert.alert('Saved', 'Photo saved locally. Upload skipped (no photo data).');
       }
     } catch (e) {
-      console.error('Upload error:', e);
-      Alert.alert('Error', 'Upload failed. Photo saved locally.');
-      // Alert.alert('Saved', 'Photo saved locally. Will upload when online.');
+      console.error('[CameraScreen] Save/Upload error:', {
+        message: e.message,
+        stack: e.stack,
+      });
+
+      // Provide more specific error message
+      let errorMessage = 'Upload failed. Photo saved locally.';
+      if (e.message?.includes('File does not exist')) {
+        errorMessage = 'Upload failed: Photo file not found. Photo saved locally.';
+      } else if (e.message?.includes('network') || e.message?.includes('timeout')) {
+        errorMessage = 'Upload failed: Network error. Photo saved locally and will retry when online.';
+      } else if (e.message?.includes('Invalid file path')) {
+        errorMessage = 'Upload failed: Invalid file. Photo saved locally.';
+      }
+
+      Alert.alert('Error', errorMessage);
     } finally {
       setIsSaving(false);
-      // Instead of hiding preview, show success popup
-      // setShowPreview(false);
-      // setFinalImageUri(null);
-      // setCapturedPhoto(null);
+      // Show success popup regardless of upload result (photo is saved locally)
       setShowSuccessPopup(true);
     }
   };
@@ -1474,7 +1537,23 @@ return (
       {/* Template slider area - Only show if we have camera permission */}
       {hasCameraPermission && (
         <View style={styles.sliderContainer}>
-          <TemplateSlider templates={TEMPLATES} onSelect={setTemplate} />
+          {templatesLoading ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+            >
+              {[1, 2, 3, 4, 5].map((i) => (
+                <View key={i} style={styles.placeholderItem} />
+              ))}
+            </ScrollView>
+          ) : template ? (
+            <TemplateSlider templates={templates} onSelect={setTemplate} />
+          ) : (
+            <View style={styles.loaderContainer}>
+              <Text style={styles.loaderText}>No templates found</Text>
+            </View>
+          )}
         </View>
       )}
       {/* Capture button and controls - Only show if we have camera permission */}
@@ -1550,7 +1629,7 @@ return (
                   setFinalImageUri(null);
                 }}
               >
-                  <MaterialCommunityIcons  name="camera-retake" size={24} color="#fff" />
+                <MaterialCommunityIcons name="camera-retake" size={24} color="#fff" />
                 {/* <Icon name="close" size={30} color="#fff" /> */}
               </TouchableOpacity>
               <TouchableOpacity
@@ -1568,7 +1647,7 @@ return (
 
           {showSuccessPopup && !showSharePopup && (
             <RNAnimated.View
-            {...panResponder.panHandlers}
+              {...panResponder.panHandlers}
               style={[
                 styles.bottomSheet,
                 {
@@ -1582,11 +1661,11 @@ return (
                 <View style={styles.successIconCircle}>
                   <Icon name="check" size={40} color="#fff" />
                 </View>
-                 {!shareSuccess ? (
-    <>
-                <Text style={styles.sheetTitle}>Success!</Text>
-                <Text style={styles.sheetSubtitle}>Photo saved in your gallery</Text>
-                {/* <TouchableOpacity
+                {!shareSuccess ? (
+                  <>
+                    <Text style={styles.sheetTitle}>Success!</Text>
+                    <Text style={styles.sheetSubtitle}>Photo saved in your gallery</Text>
+                    {/* <TouchableOpacity
                   style={styles.sheetActionBtn}
                   onPress={async () => {
                     try {
@@ -1633,109 +1712,109 @@ return (
                     <Text style={styles.sheetActionBtnText}>Share</Text>
                   )}
                 </TouchableOpacity> */}
-               <View style={styles.shareRow}>
-  {/* WhatsApp */}
-  <TouchableOpacity
-    style={[
-      styles.shareIconBtn, 
-      { backgroundColor: '#25D366' },
-      isSaving && styles.disabledButton
-    ]}
-    onPress={() => handleShare('whatsapp')}
-    disabled={isSaving}
-    activeOpacity={0.7}
-  >
-    {isSaving ? (
-      <ActivityIndicator size="small" color="#fff" />
-    ) : (
-      <View style={styles.iconContainer}>
-        <MaterialCommunityIcons 
-          name="whatsapp" 
-          size={28} 
-          color="#fff" 
-        />
-      </View>
-    )}
-  </TouchableOpacity>
+                    <View style={styles.shareRow}>
+                      {/* WhatsApp */}
+                      <TouchableOpacity
+                        style={[
+                          styles.shareIconBtn,
+                          { backgroundColor: '#25D366' },
+                          isSaving && styles.disabledButton
+                        ]}
+                        onPress={() => handleShare('whatsapp')}
+                        disabled={isSaving}
+                        activeOpacity={0.7}
+                      >
+                        {isSaving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <View style={styles.iconContainer}>
+                            <MaterialCommunityIcons
+                              name="whatsapp"
+                              size={28}
+                              color="#fff"
+                            />
+                          </View>
+                        )}
+                      </TouchableOpacity>
 
-  {/* Email */}
-  <TouchableOpacity
-    style={[
-      styles.shareIconBtn, 
-      { backgroundColor: '#EA4335' }, // Changed to Google red for email
-      isSaving && styles.disabledButton
-    ]}
-    onPress={() => handleShare('email')}
-    disabled={isSaving}
-    activeOpacity={0.7}
-  >
-    {isSaving ? (
-      <ActivityIndicator size="small" color="#fff" />
-    ) : (
-      <View style={styles.iconContainer}>
-        <Icon 
-          name="email" 
-          size={28} 
-          color="#fff" 
-        />
-      </View>
-    )}
-  </TouchableOpacity>
-</View>
- </>
-  ) : (  <>
-      {/* ✅ WhatsApp Share Success UI */}
-     {typeShare ==="whatsapp" ?
-     (<>
-      <Text style={styles.sheetTitle}>Shared Successfully</Text>
-      <Text style={styles.sheetSubtitle}>
-        Image has been shared on WhatsApp
-      </Text>
+                      {/* Email */}
+                      <TouchableOpacity
+                        style={[
+                          styles.shareIconBtn,
+                          { backgroundColor: '#EA4335' }, // Changed to Google red for email
+                          isSaving && styles.disabledButton
+                        ]}
+                        onPress={() => handleShare('email')}
+                        disabled={isSaving}
+                        activeOpacity={0.7}
+                      >
+                        {isSaving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <View style={styles.iconContainer}>
+                            <Icon
+                              name="email"
+                              size={28}
+                              color="#fff"
+                            />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (<>
+                  {/* ✅ WhatsApp Share Success UI */}
+                  {typeShare === "whatsapp" ?
+                    (<>
+                      <Text style={styles.sheetTitle}>Shared Successfully</Text>
+                      <Text style={styles.sheetSubtitle}>
+                        Image has been shared on WhatsApp
+                      </Text>
 
-      <View style={styles.whatsappSuccessRow}>
-        <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
-        <Text style={styles.whatsappSuccessText}>
-          Sent to {user?.whatsapp}
-        </Text>
-      </View>
-      </> ):(<>
-      <Text style={styles.sheetTitle}>Shared Successfully</Text>
-      <Text style={styles.sheetSubtitle}>
-        Image has been shared on Gmail
-      </Text>
+                      <View style={styles.whatsappSuccessRow}>
+                        <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
+                        <Text style={styles.whatsappSuccessText}>
+                          Sent to {user?.whatsapp}
+                        </Text>
+                      </View>
+                    </>) : (<>
+                      <Text style={styles.sheetTitle}>Shared Successfully</Text>
+                      <Text style={styles.sheetSubtitle}>
+                        Image has been shared on Gmail
+                      </Text>
 
-      <View style={styles.whatsappSuccessRow}>
-        <Icon 
-          name="email" 
-          size={28} 
-          color="#EA4335" 
-        />
-        <Text style={styles.whatsappSuccessText}>
-          Sent to {user?.email}
-        </Text>
-      </View>
-      </>)}
+                      <View style={styles.whatsappSuccessRow}>
+                        <Icon
+                          name="email"
+                          size={28}
+                          color="#EA4335"
+                        />
+                        <Text style={styles.whatsappSuccessText}>
+                          Sent to {user?.email}
+                        </Text>
+                      </View>
+                    </>)}
 
-      <TouchableOpacity
-        style={styles.doneBtn}
-        onPress={() => {
-            animateSheetOut(() => {
-      setShowSuccessPopup(false);
-      setShowPreview(false);
-      navigation.navigate('Login');
-      setTimeout(() => {
-        setShowPreview(false);
-        setFinalImageUri(null);
-        setCapturedPhoto(null);
-        setLastUploadResult(null);
-      }, 500);
-    });
-        }}
-      >
-        <Text style={styles.doneBtnText}>Done</Text>
-      </TouchableOpacity>
-    </>
-  )}
+                  <TouchableOpacity
+                    style={styles.doneBtn}
+                    onPress={() => {
+                      animateSheetOut(() => {
+                        setShowSuccessPopup(false);
+                        setShowPreview(false);
+                        navigation.navigate('Login');
+                        setTimeout(() => {
+                          setShowPreview(false);
+                          setFinalImageUri(null);
+                          setCapturedPhoto(null);
+                          setLastUploadResult(null);
+                        }, 500);
+                      });
+                    }}
+                  >
+                    <Text style={styles.doneBtnText}>Done</Text>
+                  </TouchableOpacity>
+                </>
+                )}
               </View>
             </RNAnimated.View>
           )}
@@ -1942,7 +2021,7 @@ const styles = StyleSheet.create({
     height: 5,
     backgroundColor: '#E0E0E0',
     borderRadius: 3,
-     alignSelf: 'center',
+    alignSelf: 'center',
     marginBottom: 25,
   },
   sheetContent: {
@@ -2014,12 +2093,12 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   shareRow: {
- flexDirection: 'row',
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 30, // or marginHorizontal for older RN versions
     paddingVertical: 10,
-},
+  },
 
   shareIconBtn: {
     width: 56,
@@ -2043,39 +2122,57 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
-shareLabel: {
-  marginTop: 6,
-  color: '#fff',
-  fontSize: 14,
-  fontWeight: '600',
-},
-whatsappSuccessRow: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginTop: 15,
-},
+  shareLabel: {
+    marginTop: 6,
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  whatsappSuccessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 15,
+  },
 
-whatsappSuccessText: {
-  marginLeft: 8,
-  fontSize: 15,
-  color: '#333',
-  fontWeight: '600',
-},
+  whatsappSuccessText: {
+    marginLeft: 8,
+    fontSize: 15,
+    color: '#333',
+    fontWeight: '600',
+  },
 
-doneBtn: {
-  marginTop: 25,
-  backgroundColor: '#25D366',
-  height: 50,
-  borderRadius: 25,
-  justifyContent: 'center',
-  alignItems: 'center',
-  width: '100%',
-},
+  doneBtn: {
+    marginTop: 25,
+    backgroundColor: '#25D366',
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+  },
 
-doneBtnText: {
-  color: '#fff',
-  fontSize: 16,
-  fontWeight: 'bold',
-},
-
+  doneBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loaderContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loaderText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  placeholderItem: {
+    width: 70,
+    height: 90,
+    backgroundColor: '#f5f5f5',
+    margin: 8,
+    borderRadius: 8,
+  },
 });
