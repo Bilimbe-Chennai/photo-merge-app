@@ -13,6 +13,7 @@ import {
     Dimensions,
     Alert,
     ActivityIndicator,
+    RefreshControl,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import LinearGradient from 'react-native-linear-gradient';
