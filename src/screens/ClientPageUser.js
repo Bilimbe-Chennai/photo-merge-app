@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   Alert,
+  RefreshControl,
 } from "react-native";
 import { launchCamera, launchImageLibrary } from "react-native-image-picker";
 // const template1 = require("../assets/template1.jpg");
@@ -20,138 +21,139 @@ import { PermissionsAndroid } from "react-native";
 
 
 export default function ClientPageUser() {
- const templates = [
-  {
-    id: 1,
-    name: "Professional Red",
-    // image: template1,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+  const [refreshing, setRefreshing] = useState(false);
+  const templates = [
+    {
+      id: 1,
+      name: "Professional Red",
+      // image: template1,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#d32f2f",
     },
-    color: "#d32f2f",
-  },
-  {
-    id: 2,
-    name: "Modern VIP",
-    image: template6,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 2,
+      name: "Modern VIP",
+      image: template6,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#1976d2",
     },
-    color: "#1976d2",
-  },
-  {
-    id: 3,
-    name: "Elegant Style",
-    image: template3,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 3,
+      name: "Elegant Style",
+      image: template3,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#388e3c",
     },
-    color: "#388e3c",
-  },
-  {
-    id: 4,
-    name: "Premium Card",
-    image: template4,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 4,
+      name: "Premium Card",
+      image: template4,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#7b1fa2",
     },
-    color: "#7b1fa2",
-  },
-  {
-    id: 5,
-    name: "Business Red",
-    image: template5,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 5,
+      name: "Business Red",
+      image: template5,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#d32f2f",
     },
-    color: "#d32f2f",
-  },
-  {
-    id: 6,
-    name: "Minimalist",
-    image: template2,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 6,
+      name: "Minimalist",
+      image: template2,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#616161",
     },
-    color: "#616161",
-  },
-  {
-    id: 7,
-    name: "Classic Blue",
-    image: template1,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 7,
+      name: "Classic Blue",
+      image: template1,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#1565c0",
     },
-    color: "#1565c0",
-  },
-  {
-    id: 8,
-    name: "Gold Premium",
-    image: template2,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 8,
+      name: "Gold Premium",
+      image: template2,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#ff9800",
     },
-    color: "#ff9800",
-  },
-  {
-    id: 9,
-    name: "Modern Black",
-    image: template3,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 9,
+      name: "Modern Black",
+      image: template3,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#212121",
     },
-    color: "#212121",
-  },
-  {
-    id: 10,
-    name: "Vibrant Green",
-    image: template4,
-    photoArea: {
-      top: "0%",
-      left: "0%",
-      width: "100%",
-      height: "100%",
-      borderRadius: "0%",
+    {
+      id: 10,
+      name: "Vibrant Green",
+      image: template4,
+      photoArea: {
+        top: "0%",
+        left: "0%",
+        width: "100%",
+        height: "100%",
+        borderRadius: "0%",
+      },
+      color: "#2e7d32",
     },
-    color: "#2e7d32",
-  },
-];
+  ];
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -178,8 +180,8 @@ export default function ClientPageUser() {
   // OPEN CAMERA
   const takePhoto = async () => {
     await PermissionsAndroid.request(
-  PermissionsAndroid.PERMISSIONS.CAMERA
-);
+      PermissionsAndroid.PERMISSIONS.CAMERA
+    );
 
     const result = await launchCamera({
       mediaType: "photo",
@@ -203,8 +205,28 @@ export default function ClientPageUser() {
     Alert.alert("Success", "Merged Photo Generated (Demo Only)");
   };
 
+  const onRefresh = () => {
+    setRefreshing(true);
+    setName("");
+    setEmail("");
+    setWhatsapp("");
+    setSelectedTemplate(null);
+    setPhoto(null);
+    setTimeout(() => setRefreshing(false), 500);
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#b71c1c', '#d32f2f']}
+          tintColor="#b71c1c"
+        />
+      }
+    >
       <Text style={styles.title}>Photo Merge Maker</Text>
 
       {/* USER DETAILS */}
@@ -240,19 +262,19 @@ export default function ClientPageUser() {
         <Text style={styles.sectionTitle}>Choose Template</Text>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-       {templates.map(item => (
-  <TouchableOpacity
-    key={item.id}
-    onPress={() => setSelectedTemplate(item)}
-    style={{ marginRight: 10 }}
-  >
-    <Image
-      source={item.image}
-      style={{ width: 120, height: 150, borderRadius: 10 ,}}
-    />
-    {/* <Text>{item.name}</Text> */}
-  </TouchableOpacity>
-))}
+          {templates.map(item => (
+            <TouchableOpacity
+              key={item.id}
+              onPress={() => setSelectedTemplate(item)}
+              style={{ marginRight: 10 }}
+            >
+              <Image
+                source={item.image}
+                style={{ width: 120, height: 150, borderRadius: 10, }}
+              />
+              {/* <Text>{item.name}</Text> */}
+            </TouchableOpacity>
+          ))}
         </ScrollView>
       </View>
 
@@ -288,7 +310,7 @@ export default function ClientPageUser() {
 // STYLES
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#f5f5f5", padding: 16 },
-  title: { fontSize: 26, fontWeight: "800", color: "#b71c1c", marginBottom: 15,textAlign:"center" },
+  title: { fontSize: 26, fontWeight: "800", color: "#b71c1c", marginBottom: 15, textAlign: "center" },
 
   card: {
     backgroundColor: "white",

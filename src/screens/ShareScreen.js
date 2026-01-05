@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  RefreshControl,
 } from 'react-native';
 import CommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { getPhotoById } from '../services/UploadApi';
@@ -21,14 +22,10 @@ const ShareScreen = ({ navigation, route }) => {
   const { photoId } = route.params || {};
   const [mergedImage, setMergedImage] = useState(null);
   const [loading, setLoading] = useState(false);
-  // console.log('ShareScreen photoId:', photoId);
-  // console.log(
-  //   'IMAGE URL:',
-  //   `https://api.bilimbebrandactivations.com/api/upload/file/${photoId}`,
-  // );
   // Animation values
   const sheetTranslateY = useRef(new Animated.Value(screenHeight / 2)).current;
   const sheetOpacity = useRef(new Animated.Value(0)).current;
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!photoId) {
@@ -83,6 +80,14 @@ const ShareScreen = ({ navigation, route }) => {
     }
   };
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    if (photoId) {
+      await fetchPhoto(photoId);
+    }
+    setRefreshing(false);
+  };
+
   const handleDownload = () => {
     // Reset to form page (Login)
     navigation.reset({
@@ -130,6 +135,14 @@ const ShareScreen = ({ navigation, route }) => {
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.socialRow}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#CD1C1C']}
+                tintColor="#CD1C1C"
+              />
+            }
           >
             {shareOptions.map((option, index) => (
               <TouchableOpacity key={index} style={styles.socialItem}>

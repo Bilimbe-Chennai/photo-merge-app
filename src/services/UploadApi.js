@@ -24,7 +24,6 @@ const normalizeFilePath = (uri) => {
     normalizedPath = '/' + normalizedPath;
   }
 
-  console.log('[Upload] Normalized path:', { original: uri, normalized: normalizedPath });
   return normalizedPath;
 };
 
@@ -47,11 +46,6 @@ const validatePhotoFile = async (uri) => {
 
     // Get file info
     const fileInfo = await RNFS.stat(normalizedPath);
-    console.log('[Upload] File validation:', {
-      path: normalizedPath,
-      size: fileInfo.size,
-      isFile: fileInfo.isFile(),
-    });
 
     // Check if file is empty
     if (fileInfo.size === 0) {
@@ -95,12 +89,6 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
   const MAX_RETRIES = 2;
 
   try {
-    console.log('[Upload] Starting upload attempt', {
-      attempt: retryCount + 1,
-      platform: Platform.OS,
-      photoUri: photo?.uri,
-      metadata,
-    });
 
     if (!photo?.uri) {
       throw new Error('No photo to upload: photo.uri is missing');
@@ -126,13 +114,6 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
       { name: 'branchid', data: String(metadata.branchid || '') },
     ];
 
-    console.log('[Upload] Uploading file:', {
-      path: normalizedPath,
-      size: `${(fileInfo.size / 1024).toFixed(2)}KB`,
-      filename: photo.name,
-      type: photo.type,
-    });
-
     // Perform upload with increased timeout
     const response = await RNFetchBlob.config({
       timeout: 120000, // 120 seconds timeout
@@ -147,15 +128,9 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
     );
 
     const responseText = await response.text();
-    console.log('[Upload] Response received:', {
-      status: response.info().status,
-      responseLength: responseText.length,
-    });
-
     // Parse response
     try {
       const respJson = JSON.parse(responseText);
-      console.log('[Upload] Upload successful:', respJson);
       return respJson;
     } catch (parseError) {
       console.error('[Upload] Failed to parse response:', parseError);
@@ -172,7 +147,6 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
 
     // Retry logic for network errors
     if (retryCount < MAX_RETRIES && isRetryableError(error)) {
-      console.log(`[Upload] Retrying upload (attempt ${retryCount + 2}/${MAX_RETRIES + 1})...`);
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
       return uploadToApi(photo, metadata, retryCount + 1);
     }
@@ -207,7 +181,6 @@ export const shareApi = async (type, link, whatsappNumber, id, name, email) => {
         },
       );
     }
-    // console.log('Share API Status:', response);
   } catch (err) {
     console.error('Share error:', err);
     throw err;

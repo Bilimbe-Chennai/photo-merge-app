@@ -1,22 +1,38 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Button, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Button, Image, ScrollView, RefreshControl } from 'react-native';
 
 const MergeScreen = () => {
   const [photos, setPhotos] = useState([]);
-  
+  const [refreshing, setRefreshing] = useState(false);
+
   const pickImage = () => {
     // Will implement image picker later
-    // console.log('Pick image');
   };
-  
+
   const mergePhotos = () => {
-    // console.log('Merge photos');
+    // Will implement photo merging later
   };
-  
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    setPhotos([]);
+    setTimeout(() => setRefreshing(false), 500);
+  };
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#4CAF50']}
+          tintColor="#4CAF50"
+        />
+      }
+    >
       <Text style={styles.title}>Photo Merger</Text>
-      
+
       <View style={styles.imageGrid}>
         {photos.length === 0 ? (
           <Text style={styles.emptyText}>No photos selected</Text>
@@ -26,7 +42,7 @@ const MergeScreen = () => {
           ))
         )}
       </View>
-      
+
       <View style={styles.buttonRow}>
         <Button title="Add Photo" onPress={pickImage} />
         <Button title="Merge Photos" onPress={mergePhotos} color="green" />

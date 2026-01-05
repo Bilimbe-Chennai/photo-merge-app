@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,19 +11,25 @@ import {
   Keyboard,
   ScrollView,
   Dimensions,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons'; // Using MaterialIcons for check/eye
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import useAxios from '../services/useAxios';
+
 const { width } = Dimensions.get('window');
 
-export default function LoginScreen({ navigation }) {
+export default function LoginScreen({ navigation, route }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
-  const [adminId, setAdminId] = useState('bilimbe@123');
-  const [branchId, setBranchId] = useState('bilimbe@123chennai');
+  const [adminId, setAdminId] = useState('');
+  const [branchId, setBranchId] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const scrollRef = useRef(null);
   const nameRef = useRef(null);
@@ -37,14 +43,101 @@ export default function LoginScreen({ navigation }) {
   const whatsappInput = useRef(null);
   const adminIdInput = useRef(null);
   const branchIdInput = useRef(null);
+
+  const axios = useAxios();
+
+  // Load adminId and branchId from stored session on component mount
+  useEffect(() => {
+    const loadSession = async () => {
+      try {
+        const session = await AsyncStorage.getItem('user_session');
+        if (session) {
+          const { _id, branchName } = JSON.parse(session);
+          if (_id) setAdminId(_id);
+          if (branchName) setBranchId(branchName);
+        }
+      } catch (e) {
+        console.error('Failed to load session', e);
+      }
+    };
+    loadSession();
+  }, []);
+
+
   const handleContinue = () => {
     Keyboard.dismiss();
     if (name && email && whatsapp) {
       navigation.navigate('Camera', {
-        user: { name, email, whatsapp, adminid: "bilimbe@123", branchid: "bilimbe@123chennai" },
+        user: { name, email, whatsapp, adminid: adminId, branchid: branchId },
       });
     }
   };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      // Reload session data
+      const session = await AsyncStorage.getItem('user_session');
+      if (session) {
+        const { _id, branchName } = JSON.parse(session);
+        if (_id) setAdminId(_id);
+        if (branchName) setBranchId(branchName);
+      }
+    } catch (e) {
+      console.error('Failed to reload session', e);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      'Logout',
+      'Are you sure you want to logout?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Get user session to retrieve email
+              const session = await AsyncStorage.getItem('user_session');
+              if (session) {
+                const { _id } = JSON.parse(session);
+                // Call logout API to decrement login count
+                if (_id) {
+                  try {
+                    await axios.post('/users/logout', {
+                      _id: _id,
+                      type: 'app user'
+                    });
+                  } catch (apiError) {
+                    //console.error('Logout API failed', apiError);
+                    // Continue with local logout even if API fails
+                  }
+                }
+              }
+
+              await AsyncStorage.removeItem('user_session');
+              // Reset navigation to Auth screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Auth' }],
+              });
+            } catch (e) {
+              console.error('Logout failed', e);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const scrollToInput = ref => {
     setTimeout(() => {
       ref?.current?.measureLayout(
@@ -74,13 +167,14 @@ export default function LoginScreen({ navigation }) {
         {/* Header Content */}
         <SafeAreaView style={styles.headerContent}>
           <View style={styles.topBar}>
-            {/* Menu Dots Icon placeholder */}
-            <Icon
-              name="more-horiz"
-              size={30}
-              color="#fff"
-              style={{ alignSelf: 'flex-end' }}
-            />
+            <TouchableOpacity onPress={handleLogout} style={{ padding: 10 }}>
+              <Icon
+                name="logout"
+                size={28}
+                color="#fff"
+                style={{ alignSelf: 'flex-end' }}
+              />
+            </TouchableOpacity>
           </View>
           <View style={styles.titleContainer}>
             <Text style={styles.titleLine}>Hello</Text>
@@ -97,107 +191,115 @@ export default function LoginScreen({ navigation }) {
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <View style={{ flex: 1 }}>
-      <View style={styles.formSheet}>
+            <View style={styles.formSheet}>
               <ScrollView
-          ref={scrollRef}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+                ref={scrollRef}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={['#7f0020', '#b3152c']}
+                    tintColor="#7f0020"
+                  />
+                }
               >
                 <KeyboardAwareScrollView
-    enableOnAndroid
-    extraScrollHeight={30}
-    keyboardShouldPersistTaps="handled"
-        >
+                  enableOnAndroid
+                  extraScrollHeight={30}
+                  keyboardShouldPersistTaps="handled"
+                >
 
-          {/* Name Input */}
-          <View style={styles.inputGroup} ref={nameRef}>
-            <Text style={styles.label}>Name</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Your Name"
-                placeholderTextColor="#ccc"
-                value={name}
-                onChangeText={setName}
-                onFocus={() => scrollToInput(nameRef)}
-                returnKeyType="next"
-                onSubmitEditing={() => emailInput.current.focus()}
-              />
-              {name.length > 2 && (
-                <Icon name="check" size={20} color="#28a745" />
-              )}
-            </View>
-          </View>
+                  {/* Name Input */}
+                  <View style={styles.inputGroup} ref={nameRef}>
+                    <Text style={styles.label}>Name</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Your Name"
+                        placeholderTextColor="#ccc"
+                        value={name}
+                        onChangeText={setName}
+                        onFocus={() => scrollToInput(nameRef)}
+                        returnKeyType="next"
+                        onSubmitEditing={() => emailInput.current.focus()}
+                      />
+                      {name.length > 2 && (
+                        <Icon name="check" size={20} color="#28a745" />
+                      )}
+                    </View>
+                  </View>
 
-          {/* Email Input */}
-          <View style={styles.inputGroup} ref={emailRef}>
-            <Text style={styles.label}>Gmail</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your gmail id"
-                placeholderTextColor="#ccc"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                onFocus={() => scrollToInput(emailRef)}
-                returnKeyType="next"
-                onSubmitEditing={() => whatsappInput.current.focus()}
-              />
-              {email.includes('@') && (
-                <Icon name="check" size={20} color="#28a745" />
-              )}
-            </View>
-          </View>
+                  {/* Email Input */}
+                  <View style={styles.inputGroup} ref={emailRef}>
+                    <Text style={styles.label}>Gmail</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter your gmail id"
+                        placeholderTextColor="#ccc"
+                        value={email}
+                        onChangeText={setEmail}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        onFocus={() => scrollToInput(emailRef)}
+                        returnKeyType="next"
+                        onSubmitEditing={() => whatsappInput.current.focus()}
+                      />
+                      {email.includes('@') && (
+                        <Icon name="check" size={20} color="#28a745" />
+                      )}
+                    </View>
+                  </View>
 
-          {/* WhatsApp Input */}
-                <View style={styles.inputGroup}ref={whatsappRef}>
-            <Text style={styles.label}>WhatsApp</Text>
-            <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter Whatsapp Number"
-                placeholderTextColor="#ccc"
-                value={whatsapp}
-                onChangeText={setWhatsapp}
-                keyboardType="phone-pad"
-                onFocus={() => scrollToInput(whatsappRef)}
-                returnKeyType="done"
-              />
-              <Icon name="chat" size={20} color="#999" />
-            </View>
-          </View>
+                  {/* WhatsApp Input */}
+                  <View style={styles.inputGroup} ref={whatsappRef}>
+                    <Text style={styles.label}>WhatsApp</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter Whatsapp Number"
+                        placeholderTextColor="#ccc"
+                        value={whatsapp}
+                        onChangeText={setWhatsapp}
+                        keyboardType="phone-pad"
+                        onFocus={() => scrollToInput(whatsappRef)}
+                        returnKeyType="done"
+                      />
+                      <Icon name="chat" size={20} color="#999" />
+                    </View>
+                  </View>
 
-          {/* Sign In Button */}
-          <TouchableOpacity
-            onPress={handleContinue}
-            activeOpacity={0.8}
-            style={{ marginTop: 30 }}
-          >
-            <LinearGradient
-              colors={['#7f0020', '#b3152c']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.btn}
-              disabled={!name.trim() || !email.trim() || !whatsapp.trim()}
-            >
-              <Text style={styles.btnText}>SUBMIT</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+                  {/* Sign In Button */}
+                  <TouchableOpacity
+                    onPress={handleContinue}
+                    activeOpacity={0.8}
+                    style={{ marginTop: 30 }}
+                  >
+                    <LinearGradient
+                      colors={['#7f0020', '#b3152c']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.btn}
+                      disabled={!name.trim() || !email.trim() || !whatsapp.trim()}
+                    >
+                      <Text style={styles.btnText}>SUBMIT</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
 
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              © 2025 PhotoMerge. All rights reserved.
-            </Text>
-          </View>
-        </KeyboardAwareScrollView>
+                  {/* Footer */}
+                  <View style={styles.footer}>
+                    <Text style={styles.footerText}>
+                      © 2025 PhotoMerge. All rights reserved.
+                    </Text>
+                  </View>
+                </KeyboardAwareScrollView>
               </ScrollView>
-              
+
             </View>
-      </View>
+          </View>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </View>

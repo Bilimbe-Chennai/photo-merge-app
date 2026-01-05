@@ -152,6 +152,8 @@ import CameraScreen from "./src/screens/CameraScreen";
 import PreviewScreen from "./src/screens/PreviewScreen";
 import ShareScreen from "./src/screens/ShareScreen";
 import { Linking } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 const Stack = createNativeStackNavigator();
 const SHARE_ROUTE_REGEX = /photomergeapp:\/\/share\/(.+)/;
 
@@ -167,11 +169,11 @@ function ShareOnlyStack({ shareId }) {
   );
 }
 
-function MainAppStack() {
+function MainAppStack({ initialRouteName = "Auth", initialUser = null }) {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
       <Stack.Screen name="Auth" component={AuthScreen} />
-      <Stack.Screen name="Login" component={LoginScreen} />
+      <Stack.Screen name="Login" component={LoginScreen} initialParams={{ userData: initialUser }} />
       <Stack.Screen name="Camera" component={CameraScreen} />
       <Stack.Screen name="Preview" component={PreviewScreen} />
       <Stack.Screen name="Share" component={ShareScreen} />
@@ -197,6 +199,9 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [launchMode, setLaunchMode] = useState(null); // 'share' | 'main'
   const [shareId, setShareId] = useState(null);
+  const [initialRoute, setInitialRoute] = useState("Auth");
+  const [initialUser, setInitialUser] = useState(null);
+
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(0.5)).current;
@@ -224,6 +229,21 @@ const App = () => {
       ])
     ).start();
   };
+
+  // Check auth session
+  const checkAuthSession = async () => {
+    try {
+      const session = await AsyncStorage.getItem('user_session');
+      if (session) {
+        const user = JSON.parse(session);
+        setInitialUser(user);
+        setInitialRoute("Login");
+      }
+    } catch (e) {
+      console.log('Failed to restore session', e);
+    }
+  };
+
   useEffect(() => {
     const handleUrl = (url) => {
       if (!url) {
@@ -240,7 +260,11 @@ const App = () => {
       }
     };
 
-    Linking.getInitialURL().then(handleUrl);
+    // Run both checks
+    Promise.all([
+      Linking.getInitialURL().then(handleUrl),
+      checkAuthSession()
+    ]);
 
     const sub = Linking.addEventListener("url", ({ url }) => {
       handleUrl(url);
@@ -431,7 +455,7 @@ const App = () => {
               {launchMode === "share" ? (
                 <ShareOnlyStack shareId={shareId} />
               ) : (
-                <MainAppStack />
+                <MainAppStack initialRouteName={initialRoute} initialUser={initialUser} />
               )}
             </NavigationContainer>
           )}

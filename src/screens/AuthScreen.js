@@ -19,6 +19,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import useAxios from '../services/useAxios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -27,6 +28,7 @@ export default function AuthScreen({ navigation }) {
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     const scrollRef = useRef(null);
     const emailRef = useRef(null);
@@ -35,6 +37,15 @@ export default function AuthScreen({ navigation }) {
     const emailInput = useRef(null);
     const passwordInput = useRef(null);
     const axios = useAxios();
+
+    const onRefresh = () => {
+        setRefreshing(true);
+        // Reset form state
+        setEmail('');
+        setPassword('');
+        setShowPassword(false);
+        setTimeout(() => setRefreshing(false), 500);
+    };
 
     const handleLogin = async () => {
         Keyboard.dismiss();
@@ -57,13 +68,17 @@ export default function AuthScreen({ navigation }) {
             });
 
             if (response.data.success) {
+                // Save session
+                const userData = response.data.data;
+                await AsyncStorage.setItem('user_session', JSON.stringify(userData));
+
                 // Navigate to Login screen with user data
-                navigation.navigate('Login', { userData: response.data.data });
+                navigation.replace('Login', { userData });
             } else {
                 Alert.alert('Login Failed', response.data.error || 'Invalid credentials');
             }
         } catch (error) {
-            console.error('Login error:', error);
+            //console.error('Login error:', error);
             const errorMessage = error.response?.data?.error || 'Connection error. Please try again.';
             Alert.alert('Error', errorMessage);
         } finally {
@@ -124,6 +139,14 @@ export default function AuthScreen({ navigation }) {
                                 contentContainerStyle={styles.scrollContent}
                                 keyboardShouldPersistTaps="handled"
                                 showsVerticalScrollIndicator={false}
+                                refreshControl={
+                                    <RefreshControl
+                                        refreshing={refreshing}
+                                        onRefresh={onRefresh}
+                                        colors={['#7f0020', '#b3152c']}
+                                        tintColor="#7f0020"
+                                    />
+                                }
                             >
                                 <KeyboardAwareScrollView
                                     enableOnAndroid

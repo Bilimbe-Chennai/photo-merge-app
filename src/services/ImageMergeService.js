@@ -16,7 +16,6 @@ export const mergeCameraWithTemplate = async (photoPath, templateOrId, overlayNo
     // Download if not already cached
     const exists = await RNFS.exists(localPath);
     if (!exists) {
-      console.log('[ImageMergeService] Downloading template:', templateUri);
       await RNFS.downloadFile({
         fromUrl: templateUri,
         toFile: localPath,
@@ -42,7 +41,6 @@ export const mergeCameraWithTemplate = async (photoPath, templateOrId, overlayNo
 
   // Pass normalized overlay rect and optional preview path to native
   try {
-    console.log('[ImageMergeService] Calling native merge with assetName:', assetName);
     return await ImageMerge.merge(photoPath, assetName, overlayNormalized ?? null, previewPath ?? null);
   } catch (err) {
     console.error('[ImageMergeService] ImageMerge.merge failed:', err && err.message ? err.message : err);

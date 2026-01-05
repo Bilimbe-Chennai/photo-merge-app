@@ -152,7 +152,6 @@
 
 //   // 🔴 SHOW LOADING INSTEAD OF WHITE SCREEN
 //   if (!hasPermission) {
-//     console.log(hasPermission)
 //     return (
 //       <View style={styles.center}>
 //         <Text>Requesting camera permission…</Text>
@@ -235,8 +234,6 @@
 
 //   const performCapture = async () => {
 //     if (!cameraReady) return;
-//     console.log('TEMPLATE OBJECT:', template, 'cameraPosition=', cameraPosition);
-
 //     try {
 //       // Always take a full-resolution photo first
 //       const photo = await cameraRef.current.takePhoto({ qualityPrioritization: 'quality' });
@@ -260,17 +257,13 @@
 //             }, 900);
 //           });
 
-//           if (!loaded) console.log('Warning: preview image did not finish loading before capture (timeout)');
-
 //           previewCapturePath = await viewShotRef.current.capture({ format: 'jpg', quality: 0.6 });
 //           // Cleanup
 //           setPreviewImageUri(null);
 //           setIsCapturingPreview(false);
 //           setPreviewLoaded(false);
-//           console.log('Captured preview for matching:', previewCapturePath);
 //         }
 //       } catch (err) {
-//         console.log('Preview capture failed:', err);
 //         setPreviewImageUri(null);
 //         setIsCapturingPreview(false);
 //         previewCapturePath = null;
@@ -292,10 +285,6 @@
 //           overlayRect.saveVariants = true;
 //         }
 //       }
-
-//       console.log('FINAL TEMPLATE ID:', template.id);
-//       console.log('OVERLAY RECT:', overlayRect);
-
 //       // Debug: capture the exact payload we'll pass to native so devs can inspect/copy it
 //       if (__DEV__) {
 //         setDebugPayload({
@@ -322,7 +311,6 @@
 //       setCapturedPhoto(uploadPhoto);
 //       setShowPreview(true);
 //     } catch (e) {
-//       console.log(e);
 //       Alert.alert('Error', e.message);
 //     }
 //   };
@@ -428,7 +416,6 @@
 //               style={{ flex: 1 }}
 //               showTemplate={false}
 //               onReady={() => {
-//                 console.log('Camera ready');
 //                 setCameraReady(true);
 //               }}
 //             />
@@ -440,7 +427,6 @@
 //               cameraPosition={cameraPosition}
 //               template={template.src}
 //               onReady={() => {
-//                 console.log('Camera ready');
 //                 setCameraReady(true);
 //               }}
 //             />
@@ -836,6 +822,7 @@ export default function CameraScreen({ navigation, route }) {
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   // Positions
   const SHEET_CLOSED = screenHeight / 2; // half hidden
   const SHEET_OPEN = 0;
@@ -944,8 +931,15 @@ export default function CameraScreen({ navigation, route }) {
             setTemplate(transformedTemplates[0]);
           }
         } else {
-          // If no templates from API, keep using local TEMPLATES
-          console.log('No templates from API, using local templates');
+          // If no templates from API, show alert and navigate to Login when OK is pressed
+          Alert.alert(
+            'No Templates Found',
+            'There are no templates available for your account. Please contact your admin to create templates for your branch.',
+            [{
+              text: 'OK',
+              onPress: () => navigation.navigate('Login')
+            }]
+          );
         }
       } catch (error) {
         console.error('Failed to fetch templates:', error);
@@ -959,11 +953,39 @@ export default function CameraScreen({ navigation, route }) {
     loadTemplates();
   }, []);
 
+  // Refresh handler for templates
+  const onRefreshTemplates = async () => {
+    setRefreshing(true);
+    try {
+      setTemplatesLoading(true);
+      setTemplatesError(null);
+
+      const apiTemplates = await fetchTemplates({
+        source: 'photo merge app',
+        adminid: user?.adminid,
+        branchid: user?.branchid
+      });
+
+      if (apiTemplates && apiTemplates.length > 0) {
+        const transformedTemplates = apiTemplates.flatMap(transformApiTemplate);
+        setTemplates(transformedTemplates);
+        if (transformedTemplates.length > 0) {
+          setTemplate(transformedTemplates[0]);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to refresh templates:', error);
+      setTemplatesError(error.message);
+    } finally {
+      setTemplatesLoading(false);
+      setRefreshing(false);
+    }
+  };
+
 
   const checkCameraPermission = async () => {
     try {
       const result = await check(CAMERA_PERMISSION);
-      // console.log('Camera permission check result:', result);
 
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
@@ -988,7 +1010,6 @@ export default function CameraScreen({ navigation, route }) {
   const requestCameraPermission = async () => {
     try {
       const result = await request(CAMERA_PERMISSION);
-      // console.log('Camera permission request result:', result);
 
       if (result === RESULTS.GRANTED) {
         setHasCameraPermission(true);
@@ -1042,10 +1063,8 @@ export default function CameraScreen({ navigation, route }) {
   };
   const handleShare = async (type) => {
     try {
-      console.log('Sharing via:', type);
       setTypeShare(type);
       setIsSaving(true);
-
       const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
 
       // 1️⃣ Call backend share API FIRST
@@ -1122,13 +1141,6 @@ export default function CameraScreen({ navigation, route }) {
     }
 
     setProcessing(true);
-    // console.log(
-    //   'TEMPLATE OBJECT:',
-    //   template,
-    //   'cameraPosition=',
-    //   cameraPosition,
-    // );
-
     try {
       // 1. Take a full-resolution photo (4:3)
       const photo = await cameraRef.current.takePhoto();
@@ -1153,9 +1165,6 @@ export default function CameraScreen({ navigation, route }) {
               }
             }, 900);
           });
-
-          // if (!loaded) console.log('Warning: preview image timeout');
-
           previewCapturePath = await viewShotRef.current.capture({
             format: 'jpg',
             quality: 0.6,
@@ -1164,10 +1173,8 @@ export default function CameraScreen({ navigation, route }) {
           setPreviewImageUri(null);
           setIsCapturingPreview(false);
           setPreviewLoaded(false);
-          // console.log('Captured preview for matching:', previewCapturePath);
         }
       } catch (err) {
-        //console.log('Preview capture failed:', err);
         setPreviewImageUri(null);
         setIsCapturingPreview(false);
         previewCapturePath = null;
@@ -1189,9 +1196,6 @@ export default function CameraScreen({ navigation, route }) {
           overlayRect.saveVariants = true;
         }
       }
-
-      // console.log('FINAL TEMPLATE ID:', template.id);
-      // console.log('OVERLAY RECT:', overlayRect);
 
       // Debug: capture the exact payload we'll pass to native so devs can inspect/copy it
       if (__DEV__) {
@@ -1221,7 +1225,6 @@ export default function CameraScreen({ navigation, route }) {
 
       setShowPreview(true);
     } catch (e) {
-      //console.log(e);
       Alert.alert('Error', e.message);
     } finally {
       setProcessing(false);
@@ -1408,19 +1411,8 @@ export default function CameraScreen({ navigation, route }) {
     try {
       setIsSaving(true);
       let uploadResult;
-
-      console.log('[CameraScreen] Starting save process:', {
-        hasPhoto: !!capturedPhoto,
-        photoUri: capturedPhoto?.uri,
-        user: user?.name,
-        template: template?.id || template?.name,
-      });
-
       // 1️⃣ Save locally first
-      console.log('[CameraScreen] Saving to gallery...');
       await saveToGallery(finalImageUri);
-      console.log('[CameraScreen] Saved to gallery successfully');
-
       // 2️⃣ Try API upload (include user data mapped to API fields)
       // const uploadUserData = {
       //   clientName: user && (user.name) ? (user.name) : '',
@@ -1442,10 +1434,8 @@ export default function CameraScreen({ navigation, route }) {
       };
 
       if (capturedPhoto && capturedPhoto.uri) {
-        console.log('[CameraScreen] Starting upload with metadata:', metadata);
         uploadResult = await uploadToApi(capturedPhoto, metadata);
         setLastUploadResult(uploadResult.media);
-        console.log('[CameraScreen] Upload successful:', uploadResult);
       } else {
         console.warn('[CameraScreen] No capturedPhoto available, skipping upload');
         Alert.alert('Saved', 'Photo saved locally. Upload skipped (no photo data).');
