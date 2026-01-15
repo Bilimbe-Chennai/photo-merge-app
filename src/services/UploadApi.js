@@ -3,8 +3,7 @@ import RNFetchBlob from 'react-native-blob-util';
 import RNFS from 'react-native-fs';
 import useAxios from './useAxios';
 
-const API_URL =
-  'https://api.bilimbebrandactivations.com/api/client/client/test';
+const API_BASE_URL = 'https://api.bilimbebrandactivations.com/api/client/client';
 
 /**
  * Normalize file path for different platforms and formats
@@ -52,10 +51,13 @@ const validatePhotoFile = async (uri) => {
       throw new Error('File is empty (0 bytes)');
     }
 
-    // Check if file is too large (e.g., > 50MB)
-    const maxSize = 50 * 1024 * 1024; // 50MB
+    // Check if file is too large
+    // Videos can be larger, so check file extension
+    const isVideo = normalizedPath.match(/\.(mp4|mov|avi|mkv)$/i);
+    const maxSize = isVideo ? 500 * 1024 * 1024 : 50 * 1024 * 1024; // 500MB for video, 50MB for photo
+    const maxSizeLabel = isVideo ? '500MB' : '50MB';
     if (fileInfo.size > maxSize) {
-      throw new Error(`File is too large: ${(fileInfo.size / 1024 / 1024).toFixed(2)}MB (max 50MB)`);
+      throw new Error(`File is too large: ${(fileInfo.size / 1024 / 1024).toFixed(2)}MB (max ${maxSizeLabel})`);
     }
 
     return { normalizedPath, fileInfo };
@@ -69,6 +71,17 @@ const validatePhotoFile = async (uri) => {
  * Check if error is retryable (network issues, timeouts, etc.)
  */
 const isRetryableError = (error) => {
+  // First check error object properties (most reliable)
+  if (error.isRetryable === true) {
+    return true;
+  }
+  
+  // Check status code
+  if (error.status === 504 || error.status === 503 || error.status === 502 || error.status === 500) {
+    return true;
+  }
+  
+  // Then check error message for retryable keywords
   const retryableMessages = [
     'network',
     'timeout',
@@ -76,6 +89,14 @@ const isRetryableError = (error) => {
     'ECONNREFUSED',
     'ETIMEDOUT',
     'ENOTFOUND',
+    '504', // Gateway timeout
+    '503', // Service unavailable
+    '502', // Bad gateway
+    '500', // Internal server error
+    'gateway timeout',
+    'service unavailable',
+    'bad gateway',
+    'internal server error',
   ];
 
   const errorMessage = error.message?.toLowerCase() || '';
@@ -97,26 +118,50 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
     // Validate file exists and get normalized path
     const { normalizedPath, fileInfo } = await validatePhotoFile(photo.uri);
 
+    // Determine if it's a video or photo based on file type
+    const isVideo = photo.type?.includes('video') || photo.name?.match(/\.(mp4|mov|avi)$/i);
+    // API expects "photo" field name for both photos and videos
+    // The API will use this buffer as video2 for video merge templates
+    const fieldName = 'photo'; // API always expects "photo" field name
+    const defaultExtension = isVideo ? 'mp4' : 'png';
+    const defaultMimeType = isVideo ? 'video/mp4' : 'image/png';
+    
     // Prepare upload data
     const uploadData = [
       {
-        name: 'photo',
-        filename: photo.name || `photo_${Date.now()}.png`,
-        type: photo.type || 'image/png',
+        name: fieldName,
+        filename: photo.name || `${fieldName}_${Date.now()}.${defaultExtension}`,
+        type: photo.type || defaultMimeType,
         data: RNFetchBlob.wrap(normalizedPath),
       },
       { name: 'clientName', data: String(metadata.clientName || '') },
       { name: 'whatsapp', data: String(metadata.whatsapp || '') },
       { name: 'email', data: String(metadata.email || '') },
       { name: 'template_name', data: String(metadata.template_name || '') },
-      { name: 'source', data: String(metadata.source || 'Photo Merge App') },
+      { name: 'source', data: String(metadata.source || 'photo merge app') },
       { name: 'adminid', data: String(metadata.adminid || '') },
       { name: 'branchid', data: String(metadata.branchid || '') },
+      // { name: 'isSlowMotion', data: String(metadata.isSlowMotion || 'false') },
+      // { name: 'videoSpeed', data: String(metadata.videoSpeed || 'normal') },
+      // { name: 'slowMotionSegments', data: String(metadata.slowMotionSegments || '') },
     ];
 
-    // Perform upload with increased timeout
+    // Build API URL with template name in path (API route: /client/:temp_name)
+    // Use template_name from metadata, or fallback to "test" if not provided
+    const templateName = metadata.template_name || 'test';
+    const API_URL = `${API_BASE_URL}/${templateName}`;
+    
+    console.log('[Upload] Uploading to:', API_URL, 'with field name:', fieldName);
+    
+    // Perform upload with increased timeout for video uploads
+    // Videos can take longer to process, especially with slow motion
+    const isVideoUpload = photo.type?.includes('video') || photo.name?.match(/\.(mp4|mov|avi)$/i);
+    const uploadTimeout = isVideoUpload ? 300000 : 120000; // 5 minutes for videos, 2 minutes for photos
+    
+    console.log('[Upload] Starting upload with timeout:', uploadTimeout / 1000, 'seconds');
+    
     const response = await RNFetchBlob.config({
-      timeout: 120000, // 120 seconds timeout
+      timeout: uploadTimeout,
     }).fetch(
       'POST',
       API_URL,
@@ -127,27 +172,104 @@ export const uploadToApi = async (photo, metadata = {}, retryCount = 0) => {
       uploadData,
     );
 
+    const status = response.info().status;
     const responseText = await response.text();
-    // Parse response
+    
+    // Check for HTTP errors
+    if (status >= 400) {
+      let errorMessage = `Server error (${status})`;
+      let isRetryable = false;
+      
+      // Check if status code is retryable
+      if (status === 504 || status === 503 || status === 502 || status === 500) {
+        isRetryable = true;
+        if (status === 504) {
+          errorMessage = `Gateway timeout (504). Server is taking too long to respond. This may be retried.`;
+        } else if (status === 503) {
+          errorMessage = `Service unavailable (503). Server is temporarily unavailable. This may be retried.`;
+        } else if (status === 502) {
+          errorMessage = `Bad gateway (502). Server error. This may be retried.`;
+        } else {
+          errorMessage = `Internal server error (500). This may be retried.`;
+        }
+      } else {
+        // Try to parse error message from response
+        try {
+          const errorJson = JSON.parse(responseText);
+          errorMessage = errorJson.error || errorJson.message || errorMessage;
+        } catch (e) {
+          // If response is HTML (like 404 page), extract meaningful info
+          if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+            if (status === 404) {
+              errorMessage = `Endpoint not found (404). Check if template name "${templateName}" is correct.`;
+            } else {
+              errorMessage = `Server returned HTML error page (${status}). Check API endpoint.`;
+            }
+          } else {
+            errorMessage = `${errorMessage}: ${responseText.substring(0, 200)}`;
+          }
+        }
+      }
+      
+      console.error('[Upload] Server error:', {
+        status,
+        url: API_URL,
+        templateName,
+        message: errorMessage,
+        isRetryable,
+      });
+      
+      const error = new Error(errorMessage);
+      error.status = status;
+      error.isRetryable = isRetryable;
+      throw error;
+    }
+    
+    // Parse successful response
     try {
       const respJson = JSON.parse(responseText);
       return respJson;
     } catch (parseError) {
       console.error('[Upload] Failed to parse response:', parseError);
       throw new Error(
-        `Server returned invalid JSON. Status: ${response.info().status}, Response: ${responseText.substring(0, 100)}`,
+        `Server returned invalid JSON. Status: ${status}, Response: ${responseText.substring(0, 100)}`,
       );
     }
   } catch (error) {
     console.error('[Upload] Upload failed:', {
       attempt: retryCount + 1,
       error: error.message,
+      status: error.status,
+      isRetryable: error.isRetryable,
       stack: error.stack,
     });
 
-    // Retry logic for network errors
-    if (retryCount < MAX_RETRIES && isRetryableError(error)) {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+    // Retry logic for network errors and retryable HTTP errors
+    const isRetryableByMessage = isRetryableError(error);
+    const isRetryableByProperty = error.isRetryable === true;
+    const isRetryableByStatus = error.status === 504 || error.status === 503 || error.status === 502 || error.status === 500;
+    
+    const shouldRetry = retryCount < MAX_RETRIES && (
+      isRetryableByMessage || 
+      isRetryableByProperty ||
+      isRetryableByStatus
+    );
+    
+    console.log('[Upload] Retry decision:', {
+      retryCount,
+      MAX_RETRIES,
+      shouldRetry,
+      isRetryableByMessage,
+      isRetryableByProperty,
+      isRetryableByStatus,
+      errorStatus: error.status,
+    });
+    
+    if (shouldRetry) {
+      // Exponential backoff: 2s, 4s, 8s
+      const delay = Math.min(2000 * Math.pow(2, retryCount), 8000);
+      console.log(`[Upload] Retrying upload (attempt ${retryCount + 2}/${MAX_RETRIES + 1}) after ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
       return uploadToApi(photo, metadata, retryCount + 1);
     }
 

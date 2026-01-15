@@ -10,11 +10,13 @@ buildscript {
     repositories {
         google()
         mavenCentral()
+        // Add repository for FFmpeg Kit
+        maven { url 'https://www.jitpack.io' }
     }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        classpath("com.android.tools.build:gradle:8.5.1")
         classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")
     }
 }
 

@@ -151,6 +151,7 @@ import AuthScreen from "./src/screens/AuthScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import PreviewScreen from "./src/screens/PreviewScreen";
 import ShareScreen from "./src/screens/ShareScreen";
+import AccessTypeSelectionScreen from "./src/screens/AccessTypeSelectionScreen";
 import { Linking } from "react-native";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -174,6 +175,7 @@ function MainAppStack({ initialRouteName = "Auth", initialUser = null }) {
     <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName={initialRouteName}>
       <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="Login" component={LoginScreen} initialParams={{ userData: initialUser }} />
+      <Stack.Screen name="AccessTypeSelection" component={AccessTypeSelectionScreen} />
       <Stack.Screen name="Camera" component={CameraScreen} />
       <Stack.Screen name="Preview" component={PreviewScreen} />
       <Stack.Screen name="Share" component={ShareScreen} />
@@ -190,6 +192,7 @@ const linking = {
       Share: 'share/:photoId',
       Auth: 'auth',
       Login: 'login',
+      AccessTypeSelection: 'access-type-selection',
       Camera: 'camera',
     },
   },

@@ -52,9 +52,40 @@ export default function LoginScreen({ navigation, route }) {
       try {
         const session = await AsyncStorage.getItem('user_session');
         if (session) {
-          const { _id, branchName } = JSON.parse(session);
+          const sessionData = JSON.parse(session);
+          const { _id, branchName } = sessionData;
           if (_id) setAdminId(_id);
           if (branchName) setBranchId(branchName);
+          
+          // Fetch admin details to update session data
+          const adminId = _id || sessionData?.adminId || sessionData?.adminid;
+          if (adminId) {
+            try {
+              console.log('[LoginScreen] Fetching admin details for:', adminId);
+              const adminResponse = await axios.get(`/users/${adminId}`);
+              if (adminResponse.data.success && adminResponse.data.data) {
+                // Merge admin details with existing session data
+                const adminDetails = adminResponse.data.data;
+                const updatedSession = {
+                  ...sessionData,
+                  ...adminDetails,
+                  // Preserve important user fields that shouldn't be overwritten
+                  _id: sessionData._id || adminDetails._id,
+                  email: sessionData.email || adminDetails.email,
+                  name: sessionData.name || adminDetails.name,
+                };
+                await AsyncStorage.setItem('user_session', JSON.stringify(updatedSession));
+                console.log('[LoginScreen] Admin details updated in session');
+                
+                // Update local state if needed
+                if (adminDetails.branchName) setBranchId(adminDetails.branchName);
+                if (adminDetails._id || adminDetails.adminId) setAdminId(adminDetails._id || adminDetails.adminId);
+              }
+            } catch (adminError) {
+              console.warn('[LoginScreen] Failed to fetch admin details:', adminError.message);
+              // Continue even if admin fetch fails - use existing session data
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to load session', e);
@@ -64,11 +95,43 @@ export default function LoginScreen({ navigation, route }) {
   }, []);
 
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     Keyboard.dismiss();
     if (name && email && whatsapp) {
+      const userData = { name, email, whatsapp, adminid: adminId, branchid: branchId };
+      
+      // Check if user has multiple access types
+      try {
+        const session = await AsyncStorage.getItem('user_session');
+        if (session) {
+          const sessionData = JSON.parse(session);
+          const accessTypeArray = sessionData?.accessType || sessionData?.access_type || null;
+          
+          // Check if there are two distinct access types (photomerge and videomerge)
+          if (Array.isArray(accessTypeArray) && accessTypeArray.length > 1) {
+            const hasPhoto = accessTypeArray.some(type => 
+              type && typeof type === 'string' && type.toLowerCase().includes('photo')
+            );
+            const hasVideo = accessTypeArray.some(type => 
+              type && typeof type === 'string' && type.toLowerCase().includes('video')
+            );
+            
+            // If both photo and video options exist, show selection screen
+            if (hasPhoto && hasVideo) {
+              navigation.navigate('AccessTypeSelection', {
+                user: userData,
+              });
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to check access types:', e);
+      }
+      
+      // Default: navigate directly to Camera
       navigation.navigate('Camera', {
-        user: { name, email, whatsapp, adminid: adminId, branchid: branchId },
+        user: userData,
       });
     }
   };
@@ -177,8 +240,8 @@ export default function LoginScreen({ navigation, route }) {
             </TouchableOpacity>
           </View>
           <View style={styles.titleContainer}>
-            <Text style={styles.titleLine}>Hello</Text>
-            <Text style={styles.titleLine}>Welcome Back!</Text>
+            {/*<Text style={styles.titleLine}>Hello</Text>*/}
+            <Text style={styles.titleLine2}>Enter your customer details!</Text>
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -357,6 +420,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     lineHeight: 46,
   },
+   titleLine2: {
+        fontSize: 29,
+        fontWeight: 'bold',
+        color: '#fff',
+        lineHeight: 40,
+    },
   formSheet: {
     flex: 1,
     marginTop: -30, // Pull up to overlap gradient

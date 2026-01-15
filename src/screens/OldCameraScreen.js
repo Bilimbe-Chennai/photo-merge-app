@@ -780,53 +780,20 @@ import { PERMISSIONS, RESULTS, request, check } from 'react-native-permissions';
 import { Easing, Animated as RNAnimated } from 'react-native';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { PanResponder } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import VideoCameraView from '../components/VideoCameraView';
-import VideoFilterSelector from '../components/VideoFilterSelector';
-import VideoPlayer from '../components/VideoPlayer';
 // Camera permissions based on platform
 const CAMERA_PERMISSION = Platform.select({
   ios: PERMISSIONS.IOS.CAMERA,
   android: PERMISSIONS.ANDROID.CAMERA,
 });
 
-// Constants for better code maintainability
-const Z_INDEX = {
-  CAMERA: 0,
-  LOADING: 100,
-  PREVIEW: 200,
-  COUNTDOWN: 300,
-};
-
-const TIMEOUTS = {
-  PREVIEW_LOAD: 900,
-  SNAPSHOT_CLEAR: 50,
-};
-
-const QUALITY = {
-  PREVIEW: 0.6,
-  INSTANT_SNAPSHOT: 0.95,
-  FINAL: 1.0,
-};
-
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-const cameraHeight = (screenWidth * 4) / 3;
-const SHEET_CLOSED = screenHeight / 2;
-const SHEET_OPEN = 0;
 
 export default function CameraScreen({ navigation, route }) {
   const cameraRef = useRef(null);
   const viewShotRef = useRef(null);
-  const countdownIntervalRef = useRef(null);
-  const isCapturingRef = useRef(false);
   const [templates, setTemplates] = useState(TEMPLATES);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState(null);
   const [template, setTemplate] = useState(TEMPLATES[0]);
-  const [videoTemplates, setVideoTemplates] = useState([]);
-  const [videoTemplatesLoading, setVideoTemplatesLoading] = useState(false);
-  const [hasVideoTemplates, setHasVideoTemplates] = useState(false);
-  const [selectedVideoTemplate, setSelectedVideoTemplate] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [typeShare, setTypeShare] = useState("whatsapp");
   const [cameraPosition, setCameraPosition] = useState('front');
@@ -850,29 +817,15 @@ export default function CameraScreen({ navigation, route }) {
   const [shareSuccess, setShareSuccess] = useState(false);
   const user =
     route && route.params && route.params.user ? route.params.user : {};
-  const [accessType, setAccessType] = useState(null); // Will be determined from backend
   const [debugPanelVisible, setDebugPanelVisible] = useState(false);
-  
-  // Video recording states
-  const videoCameraRef = useRef(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [videoUri, setVideoUri] = useState(null);
-  const [showVideoPreview, setShowVideoPreview] = useState(false);
-  const [capturedVideo, setCapturedVideo] = useState(null);
-  const [selectedVideoFilter, setSelectedVideoFilter] = useState('none');
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const recordingDurationRef = useRef(null);
-  const [videoSpeed, setVideoSpeed] = useState('normal'); // 'normal', 'slow' for slow motion
-  const [slowMotionSegments, setSlowMotionSegments] = useState([]); // Array of {start, end} timestamps
-  const slowMotionSegmentsRef = useRef([]); // Ref to track segments for callbacks
-  const [isSlowMotionActive, setIsSlowMotionActive] = useState(false); // Current slow motion state during recording
-  const recordingStartTimeRef = useRef(null); // Track when recording started
   const [debugPayload, setDebugPayload] = useState(null);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  
+  // Positions
+  const SHEET_CLOSED = screenHeight / 2; // half hidden
+  const SHEET_OPEN = 0;
   // Animation Values
   const sheetTranslateY = useRef(new RNAnimated.Value(SHEET_CLOSED)).current;
   const sheetOpacity = useRef(new RNAnimated.Value(0)).current;
@@ -949,72 +902,6 @@ export default function CameraScreen({ navigation, route }) {
     }
   }, [showSuccessPopup, showSharePopup]);
 
-  // Load accessType from session on mount
-  useEffect(() => {
-    const loadAccessType = async () => {
-      try {
-        // First, check if accessType was selected from the selection screen
-        const selectedAccessType = route.params?.selectedAccessType;
-        if (selectedAccessType) {
-          setAccessType(selectedAccessType);
-          return;
-        }
-
-        const session = await AsyncStorage.getItem('user_session');
-        let accessTypeArray = null;
-        console.log('session', session);
-        if (session) {
-          const sessionData = JSON.parse(session);
-          // accessType is an array in the backend
-          accessTypeArray = sessionData?.accessType || sessionData?.access_type || null;
-        }
-        
-        // Fallback to user object from route params
-        if (!accessTypeArray && (user?.accessType || user?.access_type)) {
-          accessTypeArray = user.accessType || user.access_type;
-        }
-        
-        // Handle accessType as array - determine if it contains 'photomerge' or 'videomerge'
-        if (Array.isArray(accessTypeArray) && accessTypeArray.length > 0) {
-          // Check if array contains 'videomerge' (priority), otherwise 'photomerge'
-          if (accessTypeArray.some(type => 
-            type && typeof type === 'string' && type.toLowerCase().includes('video')
-          )) {
-            setAccessType('videomerge');
-          } else if (accessTypeArray.some(type => 
-            type && typeof type === 'string' && type.toLowerCase().includes('photo')
-          )) {
-            setAccessType('photomerge');
-          } else {
-            // Default to first item in array or 'photomerge'
-            const firstType = accessTypeArray[0];
-            setAccessType(
-              firstType && typeof firstType === 'string' 
-                ? firstType.toLowerCase() 
-                : 'photomerge'
-            );
-          }
-        } else if (typeof accessTypeArray === 'string') {
-          // Handle as string (backward compatibility)
-          const normalized = accessTypeArray.toLowerCase();
-          setAccessType(
-            normalized.includes('video') ? 'videomerge' : 
-            normalized.includes('photo') ? 'photomerge' : 
-            'photomerge'
-          );
-        } else {
-          // Default to photomerge if no accessType found
-          setAccessType('photomerge');
-        }
-      } catch (e) {
-        console.error('Failed to load accessType:', e);
-        // Default to photomerge on error
-        setAccessType('photomerge');
-      }
-    };
-    loadAccessType();
-  }, [route.params?.selectedAccessType]);
-
   // Check and request camera permission on mount
   useEffect(() => {
     checkCameraPermission();
@@ -1065,62 +952,6 @@ export default function CameraScreen({ navigation, route }) {
 
     loadTemplates();
   }, []);
-
-  // Load video templates when accessType is videomerge
-  useEffect(() => {
-    const loadVideoTemplates = async () => {
-      if (accessType !== 'videomerge') {
-        return;
-      }
-
-      try {
-        setVideoTemplatesLoading(true);
-        setHasVideoTemplates(false);
-        // Fetch templates with source filter for video merge
-        const apiTemplates = await fetchTemplates({
-          source: 'video merge app',
-          adminid: user?.adminid,
-          branchid: user?.branchid
-        });
-
-        if (apiTemplates && apiTemplates.length > 0) {
-          const transformedTemplates = apiTemplates.flatMap(transformApiTemplate);
-          setVideoTemplates(transformedTemplates);
-          setHasVideoTemplates(true);
-          // Set first template as selected if available
-          if (transformedTemplates.length > 0) {
-            setSelectedVideoTemplate(transformedTemplates[0]);
-          }
-        } else {
-          // If no video templates from API, show alert
-          setHasVideoTemplates(false);
-          Alert.alert(
-            'No Video Templates Found',
-            'There are no video templates available for your account. Please contact your admin to create video templates for your branch.',
-            [{
-              text: 'OK',
-              onPress: () => navigation.navigate('Login')
-            }]
-          );
-        }
-      } catch (error) {
-        console.error('Failed to fetch video templates:', error);
-        setHasVideoTemplates(false);
-        Alert.alert(
-          'Error Loading Templates',
-          'Failed to load video templates. Please contact your admin to create video templates for your branch.',
-          [{
-            text: 'OK',
-            onPress: () => navigation.navigate('Login')
-          }]
-        );
-      } finally {
-        setVideoTemplatesLoading(false);
-      }
-    };
-
-    loadVideoTemplates();
-  }, [accessType, user?.adminid, user?.branchid]);
 
   // Refresh handler for templates
   const onRefreshTemplates = async () => {
@@ -1234,33 +1065,19 @@ export default function CameraScreen({ navigation, route }) {
     try {
       setTypeShare(type);
       setIsSaving(true);
-      
-      // Check if lastUploadResult exists and has required properties
-      if (!lastUploadResult) {
-        Alert.alert('Error', 'No upload result available. Please save the video first.');
-        setIsSaving(false);
-        return;
-      }
-      
-      // Use posterVideoId if available, otherwise fall back to _id or id
-      const videoId = lastUploadResult.posterVideoId || lastUploadResult._id || lastUploadResult.id;
-      if (!videoId) {
-        Alert.alert('Error', 'Video ID not found. Please try saving again.');
-        setIsSaving(false);
-        return;
-      }
-      
-      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${videoId}`;
+      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
 
       // 1️⃣ Call backend share API FIRST
-      await shareApi(
-        type,
-        pageUrl,
-        user?.whatsapp,
-        lastUploadResult._id || lastUploadResult.id,
-        user?.name,
-        user?.email
-      );
+      if (lastUploadResult) {
+        await shareApi(
+          type,
+          pageUrl,
+          user?.whatsapp,
+          lastUploadResult._id,
+          user?.name,
+          user?.email
+        );
+      }
 
       // 2️⃣ Open native share with IMAGE
       // const shareOptions = {
@@ -1299,83 +1116,65 @@ export default function CameraScreen({ navigation, route }) {
     // reset overlay measurements when camera switches
     setOverlayLayout(null);
   }, [cameraPosition]);
+  const pickImage = async () => {
+    const result = await launchImageLibrary({
+      mediaType: "photo",
+      quality: 1,
+    });
 
-  // Cleanup countdown timer on unmount
-  useEffect(() => {
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
-    };
-  }, []);
+    if (result.didCancel) return;
+
+    if (result.assets && result.assets.length > 0) {
+      const picked = result.assets[0];
+      //setPhoto(picked.uri);
+    }
+  };
 
   const performCapture = async () => {
-    // Prevent multiple simultaneous captures
-    if (isCapturingRef.current || !cameraReady || !hasCameraPermission || processing) {
-      return;
-    }
+    if (!cameraReady || !hasCameraPermission || processing) return;
 
     // Double-check permission before capture
     const permissionStatus = await check(CAMERA_PERMISSION);
     if (permissionStatus !== RESULTS.GRANTED) {
       showPermissionRequiredAlert();
-      setProcessing(false);
       return;
     }
 
-    // Check if camera ref is still valid
-    if (!cameraRef.current) {
-      console.error('Camera ref is null');
-      setProcessing(false);
-      isCapturingRef.current = false;
-      return;
-    }
-
-    isCapturingRef.current = true;
-
+    setProcessing(true);
     try {
-      // 1. Take a full-resolution photo (4:3) with high quality
-      const photo = await cameraRef.current.takePhoto({
-        qualityPrioritization: 'quality',
-      });
-      
-      // Set initial photo URI for preview
+      // 1. Take a full-resolution photo (4:3)
+      const photo = await cameraRef.current.takePhoto();
       setFinalImageUri(`file://${photo.path}`);
       setProcessing(true);
-      
-      // For front-camera high-res merges, capture a small preview image
+      // For front-camera high-res merges, capture a small preview image (rendering the captured photo into the same overlay area)
       let previewCapturePath = null;
       try {
         if (cameraPosition === 'front' && viewShotRef.current) {
           setIsCapturingPreview(true);
           setPreviewLoaded(false);
           setPreviewImageUri(`file://${photo.path}`);
-          
-          // Wait for the preview Image to load (or timeout)
+
+          // Wait for the preview Image to load (or timeout) so the captured view-shot contains the photo
           const loaded = await new Promise(resolve => {
             previewLoadResolver.current = resolve;
-            // Safety timeout
+            // safety timeout
             setTimeout(() => {
               if (previewLoadResolver.current) {
                 previewLoadResolver.current(false);
                 previewLoadResolver.current = null;
               }
-            }, TIMEOUTS.PREVIEW_LOAD);
+            }, 900);
           });
-          
           previewCapturePath = await viewShotRef.current.capture({
             format: 'jpg',
-            quality: QUALITY.PREVIEW, // Lower quality for preview only
+            quality: 0.6,
           });
-          
           // Cleanup
           setPreviewImageUri(null);
           setIsCapturingPreview(false);
           setPreviewLoaded(false);
         }
       } catch (err) {
-        console.warn('Preview capture failed:', err);
         setPreviewImageUri(null);
         setIsCapturingPreview(false);
         previewCapturePath = null;
@@ -1398,7 +1197,7 @@ export default function CameraScreen({ navigation, route }) {
         }
       }
 
-      // Debug: capture the exact payload we'll pass to native
+      // Debug: capture the exact payload we'll pass to native so devs can inspect/copy it
       if (__DEV__) {
         setDebugPayload({
           photoPath: photo.path,
@@ -1408,41 +1207,27 @@ export default function CameraScreen({ navigation, route }) {
         });
       }
 
-      // Merge camera photo with template (high quality)
       const mergedPath = await mergeCameraWithTemplate(
         photo.path,
         template,
         overlayRect,
         previewCapturePath,
       );
-      
       const uploadPhoto = {
         uri: `file://${mergedPath}`,
         name: `photo_${Date.now()}.png`,
         type: 'image/png',
       };
 
-      // Show preview and let user confirm (tick) to save/upload
+      // Defer saving: show preview and let user confirm (tick) to save/upload
       setFinalImageUri(`file://${mergedPath}`);
       setCapturedPhoto(uploadPhoto);
+
       setShowPreview(true);
     } catch (e) {
-      console.error('Capture error:', e);
-      Alert.alert('Error', e.message || 'Failed to capture photo. Please try again.');
-      // Reset all states on error
-      setProcessing(false);
-      setFinalImageUri(null);
-      setShowPreview(false);
-      setCountdown(0);
-      setCapturedPhoto(null);
-      // Clear countdown interval if active
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-        countdownIntervalRef.current = null;
-      }
+      Alert.alert('Error', e.message);
     } finally {
       setProcessing(false);
-      isCapturingRef.current = false;
     }
   };
 
@@ -1453,292 +1238,23 @@ export default function CameraScreen({ navigation, route }) {
       return;
     }
 
-    // Prevent multiple clicks during countdown or capture
-    if (countdown > 0 || isCapturingRef.current || processing) {
-      return;
-    }
+    if (countdown > 0) return;
 
     if (timerSec > 0) {
-      // Start countdown timer first (camera stays visible during countdown)
       setCountdown(timerSec);
       let t = timerSec;
-      
-      // Clear any existing interval
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current);
-      }
-      
-      countdownIntervalRef.current = setInterval(() => {
+      const id = setInterval(() => {
         t -= 1;
         setCountdown(t);
         if (t <= 0) {
-          // Clear interval
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current);
-            countdownIntervalRef.current = null;
-          }
+          clearInterval(id);
           setCountdown(0);
-          // Freeze camera and capture when countdown reaches 0
-          setProcessing(true);
           performCapture();
         }
       }, 1000);
     } else {
-      // No timer - freeze camera immediately and capture
-      setProcessing(true);
       performCapture();
     }
-  };
-
-  // Toggle slow motion during recording
-  const toggleSlowMotionDuringRecording = () => {
-    if (!isRecording || !recordingStartTimeRef.current) return;
-    
-    const currentTime = Date.now();
-    const elapsedSeconds = (currentTime - recordingStartTimeRef.current) / 1000;
-    
-    if (isSlowMotionActive) {
-      // Ending slow motion segment
-      setSlowMotionSegments(prev => {
-        const updated = [...prev];
-        if (updated.length > 0 && updated[updated.length - 1].end === null) {
-          updated[updated.length - 1].end = elapsedSeconds;
-        }
-        slowMotionSegmentsRef.current = updated; // Update ref
-        return updated;
-      });
-      setIsSlowMotionActive(false);
-      console.log(`[Recording] Slow motion ended at ${elapsedSeconds.toFixed(2)}s`);
-    } else {
-      // Starting slow motion segment
-      setSlowMotionSegments(prev => {
-        const updated = [...prev, { start: elapsedSeconds, end: null }];
-        slowMotionSegmentsRef.current = updated; // Update ref
-        return updated;
-      });
-      setIsSlowMotionActive(true);
-      console.log(`[Recording] Slow motion started at ${elapsedSeconds.toFixed(2)}s`);
-    }
-  };
-
-  // Video recording handlers
-  const startVideoRecording = async () => {
-    if (!videoCameraRef.current || isRecording) return;
-
-    try {
-      setIsRecording(true);
-      setRecordingDuration(0);
-      setSlowMotionSegments([]);
-      slowMotionSegmentsRef.current = []; // Clear ref
-      setIsSlowMotionActive(false);
-      recordingStartTimeRef.current = Date.now();
-      
-      // Start duration timer
-      recordingDurationRef.current = setInterval(() => {
-        setRecordingDuration(prev => prev + 1);
-      }, 1000);
-
-      // Always record at high FPS if available (for slow motion capability)
-      // Format is already selected in VideoCameraView - we'll use high FPS format
-      console.log(`[Recording] Starting video recording (slow motion segments can be added during recording)`);
-      await videoCameraRef.current.startRecording({
-        flash: 'off',
-        videoCodec: 'h264',
-        videoBitRate: 'high', // Use high bitrate for better quality
-        onRecordingFinished: (video) => {
-          const videoPath = `file://${video.path}`;
-          
-          // Use ref to get latest segments (always up-to-date)
-          const currentSegments = slowMotionSegmentsRef.current.length > 0 
-            ? slowMotionSegmentsRef.current 
-            : slowMotionSegments; // Fallback to state if ref is empty
-          
-          // Close any open slow motion segments
-          const finalSegments = [...currentSegments];
-          if (finalSegments.length > 0 && finalSegments[finalSegments.length - 1].end === null) {
-            finalSegments[finalSegments.length - 1].end = recordingDuration;
-          }
-          
-          const hasSlowMotionSegments = finalSegments.length > 0;
-          
-          console.log('[CameraScreen] Recording finished. Slow motion segments:', finalSegments);
-          console.log('[CameraScreen] Recording duration:', recordingDuration);
-          console.log('[CameraScreen] Segments from ref:', slowMotionSegmentsRef.current);
-          console.log('[CameraScreen] Segments from state:', slowMotionSegments);
-          
-          setVideoUri(videoPath);
-          setCapturedVideo({
-            uri: videoPath,
-            name: `video_${Date.now()}_${hasSlowMotionSegments ? 'slomo' : 'normal'}.mp4`,
-            type: 'video/mp4',
-            isSlowMotion: hasSlowMotionSegments || videoSpeed === 'slow',
-            videoSpeed: hasSlowMotionSegments ? 'slow' : videoSpeed,
-            slowMotionSegments: finalSegments,
-          });
-          setShowVideoPreview(true);
-          setIsRecording(false);
-          if (recordingDurationRef.current) {
-            clearInterval(recordingDurationRef.current);
-            recordingDurationRef.current = null;
-          }
-        },
-        onRecordingError: (error) => {
-          console.error('Recording error:', error);
-          Alert.alert('Error', 'Failed to record video');
-          setIsRecording(false);
-          setShowVideoPreview(false);
-          setVideoUri(null);
-          setCapturedVideo(null);
-          setSlowMotionSegments([]);
-          slowMotionSegmentsRef.current = []; // Clear ref
-          setIsSlowMotionActive(false);
-          recordingStartTimeRef.current = null;
-          if (recordingDurationRef.current) {
-            clearInterval(recordingDurationRef.current);
-            recordingDurationRef.current = null;
-          }
-        },
-      });
-    } catch (error) {
-      console.error('Start recording error:', error);
-      Alert.alert('Error', 'Failed to start recording');
-      setIsRecording(false);
-      setSlowMotionSegments([]);
-      slowMotionSegmentsRef.current = []; // Clear ref
-      setIsSlowMotionActive(false);
-      recordingStartTimeRef.current = null;
-      if (recordingDurationRef.current) {
-        clearInterval(recordingDurationRef.current);
-        recordingDurationRef.current = null;
-      }
-    }
-  };
-
-  const stopVideoRecording = async () => {
-    if (!videoCameraRef.current || !isRecording) return;
-
-    try {
-      // Close any open slow motion segment before stopping
-      if (isSlowMotionActive && slowMotionSegments.length > 0) {
-        const finalSegments = [...slowMotionSegments];
-        if (finalSegments[finalSegments.length - 1].end === null) {
-          finalSegments[finalSegments.length - 1].end = recordingDuration;
-        }
-        setSlowMotionSegments(finalSegments);
-        setIsSlowMotionActive(false);
-      }
-      
-      await videoCameraRef.current.stopRecording();
-      setIsRecording(false);
-      recordingStartTimeRef.current = null;
-      if (recordingDurationRef.current) {
-        clearInterval(recordingDurationRef.current);
-        recordingDurationRef.current = null;
-      }
-    } catch (error) {
-      console.error('Stop recording error:', error);
-      Alert.alert('Error', 'Failed to stop recording');
-      setIsRecording(false);
-      recordingStartTimeRef.current = null;
-      if (recordingDurationRef.current) {
-        clearInterval(recordingDurationRef.current);
-        recordingDurationRef.current = null;
-      }
-    }
-  };
-
-  // Cleanup video recording timer
-  useEffect(() => {
-    return () => {
-      if (recordingDurationRef.current) {
-        clearInterval(recordingDurationRef.current);
-        recordingDurationRef.current = null;
-      }
-    };
-  }, []);
-
-  const renderVideoContent = () => {
-    // Show loading while checking permission
-    if (isCheckingPermission) {
-      return (
-        <View style={styles.permissionContainer}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.permissionText}>
-            Checking camera permission...
-          </Text>
-        </View>
-      );
-    }
-
-    // Show permission request UI if no permission
-    if (!hasCameraPermission) {
-      return (
-        <View style={styles.permissionContainer}>
-          <Icon name="no-photography" size={80} color="#fff" />
-          <Text style={styles.permissionText}>Camera Access Required</Text>
-          <Text style={styles.permissionSubText}>
-            Please grant camera permission to use this feature
-          </Text>
-          <TouchableOpacity
-            style={styles.permissionButton}
-            onPress={requestCameraPermission}
-          >
-            <Text style={styles.permissionButtonText}>Grant Permission</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.permissionButton, styles.settingsButton]}
-            onPress={openAppSettings}
-          >
-            <Text style={styles.permissionButtonText}>Open Settings</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    // Video preview will be handled in the main render (similar to photo preview)
-
-    // Live video camera view
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { zIndex: Z_INDEX.CAMERA },
-            (showVideoPreview) && {
-              opacity: 0,
-              pointerEvents: 'none',
-              transform: [{ scale: 0.01 }],
-            }
-          ]}
-          collapsable={false}
-        >
-          <VideoCameraView
-            key={`video-camera-${videoSpeed}-${cameraPosition}`}
-            ref={videoCameraRef}
-            cameraPosition={cameraPosition}
-            filter={selectedVideoFilter}
-            slowMotion={videoSpeed === 'slow'}
-            onReady={() => setCameraReady(true)}
-          />
-        </View>
-        
-        {/* Recording indicator */}
-        {isRecording && (
-          <View style={styles.recordingIndicator}>
-            <View style={styles.recordingDot} />
-            <Text style={styles.recordingText}>
-              {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-            </Text>
-            {isSlowMotionActive && (
-              <View style={styles.slowMotionIndicator}>
-                <MaterialCommunityIcons name="speedometer" size={16} color="#ff3b30" />
-                <Text style={styles.slowMotionText}>SLOW MO</Text>
-              </View>
-            )}
-          </View>
-        )}
-      </View>
-    );
   };
 
   const renderCameraContent = () => {
@@ -1854,52 +1370,18 @@ export default function CameraScreen({ navigation, route }) {
     //     );
     return (
       <View style={{ flex: 1, backgroundColor: '#fff' }}>
-        {/* Camera view - keep mounted but hidden when processing to maintain ref */}
-        <View
-            style={[
-              StyleSheet.absoluteFill,
-              { zIndex: Z_INDEX.CAMERA },
-              (processing || showPreview) && {
-                opacity: 0,
-                pointerEvents: 'none',
-                transform: [{ scale: 0.01 }], // Hide by scaling down
-              }
-            ]}
-          collapsable={false}
-        >
-          <CameraView
-            ref={cameraRef}
-            cameraPosition={cameraPosition}
-            onReady={() => setCameraReady(true)}
-          />
-        </View>
+        <CameraView
+          ref={cameraRef}
+          cameraPosition={cameraPosition}
+          onReady={() => setCameraReady(true)}
+        />
 
-        {/* Loading message while waiting for photo (processing but no finalImageUri yet) */}
-        {processing && !finalImageUri && (
-          <View style={[StyleSheet.absoluteFill, { 
-            backgroundColor: '#000', 
-            zIndex: Z_INDEX.LOADING,
-            justifyContent: 'center',
-            alignItems: 'center',
-          }]}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={{
-              color: '#fff',
-              fontSize: 18,
-              marginTop: 20,
-              fontWeight: '600',
-            }}>
-              Wait for capture the photo...
-            </Text>
-          </View>
-        )}
-
-        {/* 🔥 FREEZE FRAME OVER CAMERA - Show captured photo */}
+        {/* 🔥 FREEZE FRAME OVER CAMERA */}
         {(processing || showPreview) && finalImageUri && (
-          <View style={[StyleSheet.absoluteFill, { zIndex: Z_INDEX.PREVIEW }]}>
+          <View style={StyleSheet.absoluteFill}>
             <Image
               source={{ uri: finalImageUri }}
-              style={StyleSheet.absoluteFill}
+              style={{ flex: 1 }}
               resizeMode="cover"
             />
 
@@ -1931,6 +1413,15 @@ export default function CameraScreen({ navigation, route }) {
       let uploadResult;
       // 1️⃣ Save locally first
       await saveToGallery(finalImageUri);
+      // 2️⃣ Try API upload (include user data mapped to API fields)
+      // const uploadUserData = {
+      //   clientName: user && (user.name) ? (user.name) : '',
+      //   email: user && (user.email || '') ? user.email : '',
+      //   whatsapp: user && (user.whatsapp) ? (user.whatsapp) : '',
+      //   template_name: template && (template.id || template.name) ? (template.id || template.name) : 'birthday_template_1',
+      //   source: 'Photo Merge App',
+      // };
+      // await uploadWithOfflineQueue(capturedPhoto, uploadUserData);
       // 2️⃣ Upload to backend
       const metadata = {
         clientName: user?.name || '',
@@ -1969,110 +1460,6 @@ export default function CameraScreen({ navigation, route }) {
     } finally {
       setIsSaving(false);
       // Show success popup regardless of upload result (photo is saved locally)
-      setShowSuccessPopup(true);
-    }
-  };
-
-  const handleConfirmSaveVideo = async () => {
-    try {
-      setIsSaving(true);
-      let uploadResult;
-      
-      // Check if we have slow motion segments
-      const hasSlowMotionSegments = capturedVideo?.slowMotionSegments && capturedVideo.slowMotionSegments.length > 0;
-      const isSlowMo = hasSlowMotionSegments || videoSpeed === 'slow' || capturedVideo?.isSlowMotion || false;
-      
-      let videoToSave = videoUri; // Default to original video
-      
-      // Process video if we have slow motion segments
-      // NOTE: Currently video processing is not implemented, so original video is saved
-      // The preview will show slow motion correctly, but saved video will be normal speed
-      // To enable slow motion in saved videos, install react-native-ffmpeg
-      if (hasSlowMotionSegments) {
-        try {
-          console.log('[CameraScreen] Attempting to process video with slow motion segments...');
-          const { processVideoWithSlowMotion } = await import('../services/VideoProcessingService');
-          videoToSave = await processVideoWithSlowMotion(videoUri, capturedVideo.slowMotionSegments);
-          
-          // Check if processing actually happened (if it returns original, processing didn't happen)
-          if (videoToSave === videoUri) {
-            console.warn('[CameraScreen] ⚠️ Video processing not available - saving original video');
-            console.warn('[CameraScreen] Slow motion will work in preview but not in saved video');
-            console.warn('[CameraScreen] To enable slow motion in saved videos, install react-native-ffmpeg');
-          } else {
-            console.log('[CameraScreen] Video processed successfully, saving to gallery:', videoToSave);
-          }
-        } catch (processingError) {
-          console.warn('[CameraScreen] Video processing failed, saving original video:', processingError);
-          // Continue with original video if processing fails
-          videoToSave = videoUri;
-        }
-      }
-      
-      // 1️⃣ Save locally first
-      if (isSlowMo) {
-        console.log('[CameraScreen] Saving slow motion video to gallery');
-      }
-      await saveToGallery(videoToSave, 'video');
-      // 2️⃣ Upload to backend (hasSlowMotionSegments already defined above)
-      // Get template name if templates exist
-      const templateName = hasVideoTemplates && selectedVideoTemplate 
-        ? (selectedVideoTemplate.templatename || selectedVideoTemplate.name || 'video_recording')
-        : 'video_recording';
-      
-      const metadata = {
-        clientName: user?.name || '',
-        email: user?.email || '',
-        whatsapp: user?.whatsapp || '',
-        template_name: templateName,
-        source: 'video merge app',
-        adminid: user?.adminid || '',
-        branchid: user?.branchid || '',
-        isSlowMotion: hasSlowMotionSegments || videoSpeed === 'slow' || capturedVideo?.isSlowMotion || false,
-        videoSpeed: hasSlowMotionSegments ? 'slow' : (videoSpeed || capturedVideo?.videoSpeed || 'normal'),
-        slowMotionSegments: hasSlowMotionSegments ? JSON.stringify(capturedVideo.slowMotionSegments) : '',
-        hasTemplates: hasVideoTemplates, // Flag to indicate templates exist
-      };
-      
-      console.log('[CameraScreen] Uploading video with metadata:', {
-        isSlowMotion: metadata.isSlowMotion,
-        videoSpeed: metadata.videoSpeed,
-        segmentsCount: capturedVideo?.slowMotionSegments?.length || 0,
-        segments: capturedVideo?.slowMotionSegments,
-      });
-
-      // Use processed video for upload if available, otherwise use original
-      const videoForUpload = hasSlowMotionSegments && videoToSave !== videoUri 
-        ? { ...capturedVideo, uri: videoToSave }
-        : capturedVideo;
-
-      if (videoForUpload && videoForUpload.uri) {
-        uploadResult = await uploadToApi(videoForUpload, metadata);
-        setLastUploadResult(uploadResult.media);
-      } else {
-        console.warn('[CameraScreen] No capturedVideo available, skipping upload');
-        Alert.alert('Saved', 'Video saved locally. Upload skipped (no video data).');
-      }
-    } catch (e) {
-      console.error('[CameraScreen] Video Save/Upload error:', {
-        message: e.message,
-        stack: e.stack,
-      });
-
-      // Provide more specific error message
-      let errorMessage = 'Upload failed. Video saved locally.';
-      if (e.message?.includes('File does not exist')) {
-        errorMessage = 'Upload failed: Video file not found. Video saved locally.';
-      } else if (e.message?.includes('network') || e.message?.includes('timeout')) {
-        errorMessage = 'Upload failed: Network error. Video saved locally and will retry when online.';
-      } else if (e.message?.includes('Invalid file path')) {
-        errorMessage = 'Upload failed: Invalid file. Video saved locally.';
-      }
-
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setIsSaving(false);
-      // Show success popup regardless of upload result (video is saved locally)
       setShowSuccessPopup(true);
     }
   };
@@ -2125,50 +1512,20 @@ export default function CameraScreen({ navigation, route }) {
         style={styles.cameraContainer}
         onLayout={e => setContainerLayout(e.nativeEvent.layout)}
       >
-        {accessType === null ? (
-          <View style={styles.permissionContainer}>
-            <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.permissionText}>Loading...</Text>
-          </View>
-        ) : accessType === 'videomerge' ? (
-          hasVideoTemplates ? renderVideoContent() : (
-            <View style={styles.permissionContainer}>
-              {videoTemplatesLoading ? (
-                <>
-                  <ActivityIndicator size="large" color="#fff" />
-                  <Text style={styles.permissionText}>Loading video templates...</Text>
-                </>
-              ) : (
-                <>
-                  <Icon name="video-library" size={80} color="#fff" />
-                  <Text style={styles.permissionText}>No Video Templates Available</Text>
-                  <Text style={styles.permissionSubText}>
-                    Please contact your admin to create video templates for your branch.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.permissionButton}
-                    onPress={() => navigation.navigate('Login')}
-                  >
-                    <Text style={styles.permissionButtonText}>Go Back</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-          )
-        ) : renderCameraContent()}
+        {renderCameraContent()}
 
         {/* Top controls - Only show if we have camera permission */}
 
-        {/* Countdown overlay - Show on top of everything (only for photomerge) */}
-        {accessType !== null && accessType === 'photomerge' && countdown > 0 && (
-          <View style={[styles.countdownOverlay, { zIndex: Z_INDEX.COUNTDOWN }]} pointerEvents="none">
+        {/* Countdown overlay */}
+        {countdown > 0 && (
+          <View style={styles.countdownOverlay} pointerEvents="none">
             <Text style={styles.countdownText}>{countdown}</Text>
           </View>
         )}
       </View>
 
-      {/* Template slider area - Only show for photomerge */}
-      {hasCameraPermission && accessType !== null && accessType === 'photomerge' && (
+      {/* Template slider area - Only show if we have camera permission */}
+      {hasCameraPermission && (
         <View style={styles.sliderContainer}>
           {templatesLoading ? (
             <ScrollView
@@ -2189,308 +1546,58 @@ export default function CameraScreen({ navigation, route }) {
           )}
         </View>
       )}
-
-      {/* Video filter selector - Only show for videomerge */}
-      {/* {hasCameraPermission && accessType !== null && accessType === 'videomerge' && !showVideoPreview && (
-        <VideoFilterSelector
-          selectedFilter={selectedVideoFilter}
-          onSelectFilter={setSelectedVideoFilter}
-        />
-      )} */}
       {/* Capture button and controls - Only show if we have camera permission */}
       {hasCameraPermission && (
         <View style={styles.bottomControls}>
-          {accessType !== null && accessType === 'photomerge' ? (
-            <>
-              <TouchableOpacity
-                style={styles.sideButton}
-                onPress={() =>
-                  setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
-                }
-              >
-                <View style={{ position: 'relative' }}>
-                  <Icon name="timer" size={28} color="#000" />
-                  {timerSec !== 0 && (
-                    <View style={styles.timerBadge}>
-                      <Text style={styles.timerBadgeText}>{timerSec}</Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.captureBtnWrapper}
-                onPress={onCapture}
-                disabled={processing || !cameraReady}
-              >
-                <View style={styles.captureBtnOuter}>
-                  <View style={styles.captureBtnInner} />
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sideButton}
-                onPress={() =>
-                  setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'))
-                }
-              >
-                <Icon name="cached" size={32} color="#000" />
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity
-                style={styles.sideButton}
-                onPress={() =>
-                  setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'))
-                }
-              >
-                <Icon name="cached" size={32} color="#000" />
-              </TouchableOpacity>
-             
-              <TouchableOpacity
-                style={[
-                  styles.videoRecordBtn,
-                  isRecording && styles.recordingButton,
-                ]}
-                onPress={isRecording ? stopVideoRecording : startVideoRecording}
-                disabled={!cameraReady}
-              >
-                {isRecording ? (
-                  <View style={styles.recordingButtonInner}>
-                    <View style={styles.stopIcon} />
-                  </View>
-                ) : (
-                  <MaterialCommunityIcons name="video" size={40} color="#fff" />
-                )}
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.sideButton}
-                onPress={() => {
-                  if (isRecording) {
-                    // Toggle slow motion during recording
-                    toggleSlowMotionDuringRecording();
-                  } else {
-                    // Toggle slow motion mode before recording
-                    setVideoSpeed(videoSpeed === 'normal' ? 'slow' : 'normal');
-                  }
-                }}
-              >
-                <View style={{ alignItems: 'center' }}>
-                  <MaterialCommunityIcons 
-                    name={(isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow') ? 'speedometer' : 'speedometer-slow'} 
-                    size={28} 
-                    color={(isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow') ? '#ff3b30' : '#000'} 
-                  />
-                  {((isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow')) && (
-                    <Text style={{ fontSize: 10, color: '#ff3b30', marginTop: 2 }}>SLOMO</Text>
-                  )}
-                  {isRecording && slowMotionSegments.length > 0 && (
-                    <View style={{ 
-                      position: 'absolute', 
-                      top: -5, 
-                      right: -5, 
-                      backgroundColor: '#ff3b30', 
-                      borderRadius: 8, 
-                      width: 16, 
-                      height: 16, 
-                      justifyContent: 'center', 
-                      alignItems: 'center' 
-                    }}>
-                      <Text style={{ fontSize: 8, color: '#fff', fontWeight: 'bold' }}>
-                        {slowMotionSegments.length}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </TouchableOpacity>
-              {/* <View style={styles.sideButton} /> */}
-            </>
-          )}
-        </View>
-      )}
-
-      {/* Video Preview Overlay */}
-      {showVideoPreview && videoUri && (
-        <View style={styles.previewOverlay}>
-          <View style={styles.fullPreviewImage}>
-            {/* Video player with play controls */}
-            <VideoPlayer 
-              uri={videoUri}
-              style={{ flex: 1 }}
-              isSlowMotion={videoSpeed === 'slow' && (!capturedVideo?.slowMotionSegments || capturedVideo.slowMotionSegments.length === 0)}
-              slowMotionSegments={capturedVideo?.slowMotionSegments || []}
-            />
-            {/* Slow motion badge */}
-            {(videoSpeed === 'slow' || (capturedVideo?.slowMotionSegments && capturedVideo.slowMotionSegments.length > 0)) && (
-              <View style={[styles.slomoBadge, { position: 'absolute', top: 20, left: 20, zIndex: 10 }]}>
-                <MaterialCommunityIcons name="speedometer" size={16} color="#ff3b30" />
-                <Text style={{ color: '#ff3b30', fontSize: 12, marginLeft: 4, fontWeight: 'bold' }}>
-                  SLOW MOTION
-                  {capturedVideo?.slowMotionSegments && capturedVideo.slowMotionSegments.length > 0 && (
-                    <Text style={{ fontSize: 10, marginLeft: 4 }}>({capturedVideo.slowMotionSegments.length} segments)</Text>
-                  )}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {!showSuccessPopup && !showSharePopup && (
-            <View style={styles.previewActions}>
-              <TouchableOpacity
-                style={styles.previewBtn}
-                onPress={() => {
-                  // Reset all states when canceling preview
-                  setShowVideoPreview(false);
-                  setVideoUri(null);
-                  setCapturedVideo(null);
-                  setRecordingDuration(0);
-                  if (recordingDurationRef.current) {
-                    clearInterval(recordingDurationRef.current);
-                    recordingDurationRef.current = null;
-                  }
-                }}
-              >
-                <MaterialCommunityIcons name="camera-retake" size={24} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.previewBtn, { backgroundColor: '#4CAF50' }]}
-                onPress={handleConfirmSaveVideo}
-              >
-                {isSaving ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Icon name="check" size={30} color="#fff" />
-                )}
-              </TouchableOpacity>
+          {/* <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() => setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)}
+          >
+            <View style={{ alignItems: 'center' }}>
+              <Icon  name="timer" size={22} color="#fff" />
+              {timerSec !== 0 && <Text style={styles.iconSubText}>{`${timerSec}s`}</Text>}
             </View>
-          )}
-
-          {showSuccessPopup && !showSharePopup && (
-            <RNAnimated.View
-              {...panResponder.panHandlers}
-              style={[
-                styles.bottomSheet,
-                {
-                  transform: [{ translateY: sheetTranslateY }],
-                  opacity: sheetOpacity,
-                },
-              ]}
-            >
-              <View style={styles.dragHandle} />
-              <View style={styles.sheetContent}>
-                <View style={styles.successIconCircle}>
-                  <Icon name="check" size={40} color="#fff" />
+          </TouchableOpacity> */}
+          <TouchableOpacity
+            style={styles.sideButton}
+            onPress={() =>
+              setTimerSec(timerSec === 0 ? 3 : timerSec === 3 ? 5 : 0)
+            }
+          >
+            <View style={{ position: 'relative' }}>
+              <Icon name="timer" size={28} color="#000" />
+              {timerSec !== 0 && (
+                <View style={styles.timerBadge}>
+                  <Text style={styles.timerBadgeText}>{timerSec}</Text>
                 </View>
-                {!shareSuccess ? (
-                  <>
-                    <Text style={styles.sheetTitle}>Success!</Text>
-                    <Text style={styles.sheetSubtitle}>Video saved in your gallery</Text>
-                    <View style={styles.shareRow}>
-                      {/* WhatsApp */}
-                      <TouchableOpacity
-                        style={[
-                          styles.shareIconBtn,
-                          { backgroundColor: '#25D366' },
-                          isSaving && styles.disabledButton
-                        ]}
-                        onPress={() => handleShare('whatsapp')}
-                        disabled={isSaving}
-                        activeOpacity={0.7}
-                      >
-                        {isSaving ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <View style={styles.iconContainer}>
-                            <MaterialCommunityIcons
-                              name="whatsapp"
-                              size={28}
-                              color="#fff"
-                            />
-                          </View>
-                        )}
-                      </TouchableOpacity>
+              )}
+            </View>
+          </TouchableOpacity>
+          {/* <TouchableOpacity
+            style={styles.sideButton}
+            onPress={() => pickImage()}
+          >
+            <Icon name="photo-library" size={32} color="#fff" />
+          </TouchableOpacity> */}
+          <TouchableOpacity
+            style={styles.captureBtnWrapper}
+            onPress={onCapture}
+            disabled={processing || !cameraReady}
+          >
+            <View style={styles.captureBtnOuter}>
+              <View style={styles.captureBtnInner} />
+            </View>
+          </TouchableOpacity>
+          {/* <CaptureButton onPress={onCapture} disabled={!cameraReady} /> */}
 
-                      {/* Email */}
-                      <TouchableOpacity
-                        style={[
-                          styles.shareIconBtn,
-                          { backgroundColor: '#EA4335' },
-                          isSaving && styles.disabledButton
-                        ]}
-                        onPress={() => handleShare('email')}
-                        disabled={isSaving}
-                        activeOpacity={0.7}
-                      >
-                        {isSaving ? (
-                          <ActivityIndicator size="small" color="#fff" />
-                        ) : (
-                          <View style={styles.iconContainer}>
-                            <Icon
-                              name="email"
-                              size={28}
-                              color="#fff"
-                            />
-                          </View>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    {typeShare === "whatsapp" ? (
-                      <>
-                        <Text style={styles.sheetTitle}>Shared Successfully</Text>
-                        <Text style={styles.sheetSubtitle}>
-                          Video has been shared on WhatsApp
-                        </Text>
-                        <View style={styles.whatsappSuccessRow}>
-                          <MaterialCommunityIcons name="whatsapp" size={24} color="#25D366" />
-                          <Text style={styles.whatsappSuccessText}>
-                            Sent to {user?.whatsapp}
-                          </Text>
-                        </View>
-                      </>
-                    ) : (
-                      <>
-                        <Text style={styles.sheetTitle}>Shared Successfully</Text>
-                        <Text style={styles.sheetSubtitle}>
-                          Video has been shared on Gmail
-                        </Text>
-                        <View style={styles.whatsappSuccessRow}>
-                          <Icon
-                            name="email"
-                            size={28}
-                            color="#EA4335"
-                          />
-                          <Text style={styles.whatsappSuccessText}>
-                            Sent to {user?.email}
-                          </Text>
-                        </View>
-                      </>
-                    )}
-                    <TouchableOpacity
-                      style={styles.doneBtn}
-                      onPress={() => {
-                        animateSheetOut(() => {
-                          setShowSuccessPopup(false);
-                          setShowVideoPreview(false);
-                          navigation.navigate('Login');
-                          setTimeout(() => {
-                            setShowVideoPreview(false);
-                            setVideoUri(null);
-                            setCapturedVideo(null);
-                            setLastUploadResult(null);
-                            setRecordingDuration(0);
-                          }, 500);
-                        });
-                      }}
-                    >
-                      <Text style={styles.doneBtnText}>Done</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            </RNAnimated.View>
-          )}
+          <TouchableOpacity
+            style={styles.sideButton}
+            onPress={() =>
+              setCameraPosition(prev => (prev === 'front' ? 'back' : 'front'))
+            }
+          >
+            <Icon name="cached" size={32} color="#000" />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -2508,16 +1615,8 @@ export default function CameraScreen({ navigation, route }) {
               <TouchableOpacity
                 style={styles.previewBtn}
                 onPress={() => {
-                  // Reset all states when canceling preview
                   setShowPreview(false);
                   setFinalImageUri(null);
-                  setCapturedPhoto(null);
-                  setProcessing(false);
-                  setCountdown(0);
-                  if (countdownIntervalRef.current) {
-                    clearInterval(countdownIntervalRef.current);
-                    countdownIntervalRef.current = null;
-                  }
                 }}
               >
                 <MaterialCommunityIcons name="camera-retake" size={24} color="#fff" />
@@ -2561,30 +1660,16 @@ export default function CameraScreen({ navigation, route }) {
                   onPress={async () => {
                     try {
                       setIsSaving(true);
-                      
-                      // Check if lastUploadResult exists and has required properties
-                      if (!lastUploadResult) {
-                        Alert.alert('Error', 'No upload result available. Please save the photo first.');
-                        setIsSaving(false);
-                        return;
-                      }
-                      
-                      // Use posterVideoId if available, otherwise fall back to _id or id
-                      const photoId = lastUploadResult.posterVideoId || lastUploadResult._id || lastUploadResult.id;
-                      if (!photoId) {
-                        Alert.alert('Error', 'Photo ID not found. Please try saving again.');
-                        setIsSaving(false);
-                        return;
-                      }
-                      
-                      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${photoId}`;
+                      const pageUrl = `https://app.bilimbebrandactivations.com/photomergeapp/share/${lastUploadResult.posterVideoId}`;
                       // User mentioned: "call the shareapi once the api given then response redirect to share page"
                       // shareApi needs (pageUrl, whatsappNumber, id)
-                      await shareApi(
-                        pageUrl,
-                        user?.whatsapp,
-                        lastUploadResult._id || lastUploadResult.id
-                      );
+                      if (lastUploadResult) {
+                        await shareApi(
+                          pageUrl,
+                          user?.whatsapp,
+                          lastUploadResult._id
+                        );
+                      }
 
                       animateSheetOut(() => {
                         setShowSuccessPopup(false);
@@ -2727,7 +1812,7 @@ export default function CameraScreen({ navigation, route }) {
       )}
 
       {/* Processing Indicator */}
-      {processing && finalImageUri && (
+      {processing && (
         <View style={StyleSheet.absoluteFill}>
           <View
             style={{
@@ -2747,6 +1832,9 @@ export default function CameraScreen({ navigation, route }) {
     </View>
   );
 }
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const cameraHeight = (screenWidth * 4) / 3;
 
 const styles = StyleSheet.create({
   container: {
@@ -3076,101 +2164,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     margin: 8,
     borderRadius: 8,
-  },
-  // Video recording styles
-  recordingIndicator: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 0, 0, 0.7)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    zIndex: 1000,
-  },
-  recordingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#fff',
-    marginRight: 8,
-  },
-  recordingText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  slowMotionIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginLeft: 12,
-    backgroundColor: 'rgba(255, 59, 48, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ff3b30',
-  },
-  slowMotionText: {
-    color: '#ff3b30',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  recordingButton: {
-    opacity: 0.8,
-  },
-  recordingButtonOuter: {
-    borderColor: '#ff3b30',
-  },
-  recordingButtonInner: {
-    backgroundColor: '#ff3b30',
-    borderRadius: 25,
-    width: 60,
-    height: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  videoRecordBtn: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: '#fff',
-  },
-  stopIcon: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#fff',
-    borderRadius: 2,
-  },
-  videoPreviewContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  slomoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 59, 48, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginTop: 15,
-    borderWidth: 1,
-    borderColor: '#ff3b30',
-  },
-  videoPreviewActions: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 40,
   },
 });

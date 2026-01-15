@@ -70,7 +70,34 @@ export default function AuthScreen({ navigation }) {
 
             if (response.data.success) {
                 // Save session
-                const userData = response.data.data;
+                let userData = response.data.data;
+                
+                // Fetch admin details if adminId exists
+                try {
+                    const adminId = userData?._id || userData?.adminId || userData?.adminid;
+                    if (adminId) {
+                        console.log('[AuthScreen] Fetching admin details for:', adminId);
+                        const adminResponse = await axios.get(`/users/${adminId}`);
+                        if (adminResponse.data.success && adminResponse.data.data) {
+                            // Merge admin details with user data
+                            const adminDetails = adminResponse.data.data;
+                            userData = {
+                                ...userData,
+                                ...adminDetails,
+                                // Preserve important user fields
+                                _id: userData._id,
+                                email: userData.email,
+                                name: userData.name,
+                            };
+                            console.log('[AuthScreen] Admin details merged successfully');
+                        }
+                    }
+                } catch (adminError) {
+                    console.warn('[AuthScreen] Failed to fetch admin details:', adminError.message);
+                    // Continue with login even if admin fetch fails
+                }
+                
+                // Save updated session with admin details
                 await AsyncStorage.setItem('user_session', JSON.stringify(userData));
 
                 // Navigate to Login screen with user data
@@ -122,7 +149,7 @@ export default function AuthScreen({ navigation }) {
                     </View>
                     <View style={styles.titleContainer}>
                         <Text style={styles.titleLine}>Sign In</Text>
-                        <Text style={styles.titleLine}>To Your Account</Text>
+                        <Text style={styles.titleLine2}>To Your Store Manager Account</Text>
                     </View>
                 </SafeAreaView>
             </LinearGradient>
@@ -289,6 +316,12 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#fff',
         lineHeight: 46,
+    },
+     titleLine2: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#fff',
+        lineHeight: 40,
     },
     formSheet: {
         flex: 1,
