@@ -3,6 +3,7 @@ package com.photomergeapp
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMuxer
+import android.media.MediaMetadataRetriever
 import android.util.Log
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -132,8 +133,44 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
             
             Log.d("VideoProcessing", "Processing ${allParts.size} parts")
             
+            // Read orientation from input video metadata
+            var orientation = 0
+            var metadataRetriever: MediaMetadataRetriever? = null
+            try {
+                metadataRetriever = MediaMetadataRetriever()
+                metadataRetriever.setDataSource(inputPath)
+                
+                // Try to get rotation from metadata
+                val rotationStr = metadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                if (rotationStr != null) {
+                    orientation = rotationStr.toIntOrNull() ?: 0
+                    Log.d("VideoProcessing", "Found rotation in metadata: $orientation degrees")
+                } else {
+                    // Check if orientation is in the video format as fallback
+                    if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
+                        orientation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
+                        Log.d("VideoProcessing", "Found orientation in format: $orientation degrees")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("VideoProcessing", "Could not read orientation: ${e.message}")
+            } finally {
+                metadataRetriever?.release()
+            }
+            
             // Create muxer and add tracks BEFORE starting
             muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            
+            // Set orientation hint if we found one (preserves portrait/landscape orientation)
+            if (orientation != 0) {
+                try {
+                    muxer.setOrientationHint(orientation)
+                    Log.d("VideoProcessing", "Set orientation hint on muxer: $orientation degrees")
+                } catch (e: Exception) {
+                    Log.w("VideoProcessing", "Could not set orientation hint: ${e.message}")
+                }
+            }
+            
             val muxerVideoTrackIndex = muxer.addTrack(videoFormat)
             val muxerAudioTrackIndex = if (audioFormat != null) {
                 muxer.addTrack(audioFormat)

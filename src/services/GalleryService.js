@@ -5,5 +5,11 @@ export const saveToGallery = async (filePath, fileType = 'photo') => {
   const granted = await requestGalleryPermission();
   if (!granted) throw new Error('Gallery permission denied');
 
-  await CameraRoll.save(filePath, { type: fileType });
+  // Save with original dimensions preserved (portrait/landscape aspect ratio maintained)
+  // CameraRoll.save preserves the original video dimensions without resizing
+  await CameraRoll.save(filePath, { 
+    type: fileType,
+  });
+  
+  console.log(`[GalleryService] Saved ${fileType} to gallery with original dimensions: ${filePath}`);
 };

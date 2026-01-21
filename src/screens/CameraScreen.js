@@ -859,6 +859,7 @@ export default function CameraScreen({ navigation, route }) {
   const [videoUri, setVideoUri] = useState(null);
   const [showVideoPreview, setShowVideoPreview] = useState(false);
   const [capturedVideo, setCapturedVideo] = useState(null);
+  const recordingFpsRef = useRef(30); // Default to 30fps
   const [selectedVideoFilter, setSelectedVideoFilter] = useState('none');
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingDurationRef = useRef(null);
@@ -1020,9 +1021,12 @@ export default function CameraScreen({ navigation, route }) {
     checkCameraPermission();
   }, []);
 
-  // Fetch templates from API on mount
+  // Fetch PHOTO templates only when on photomerge
   useEffect(() => {
     const loadTemplates = async () => {
+      if (accessType !== 'photomerge') {
+        return;
+      }
       try {
         setTemplatesLoading(true);
         setTemplatesError(null);
@@ -1064,35 +1068,84 @@ export default function CameraScreen({ navigation, route }) {
     };
 
     loadTemplates();
-  }, []);
+  }, [accessType, user?.adminid, user?.branchid]);
 
   // Load video templates when accessType is videomerge
   useEffect(() => {
     const loadVideoTemplates = async () => {
       if (accessType !== 'videomerge') {
+        // Reset video templates state when switching away
+        setHasVideoTemplates(false);
+        setVideoTemplates([]);
         return;
       }
 
       try {
         setVideoTemplatesLoading(true);
         setHasVideoTemplates(false);
-        // Fetch templates with source filter for video merge
-        const apiTemplates = await fetchTemplates({
-          source: 'video merge app',
-          adminid: user?.adminid,
-          branchid: user?.branchid
-        });
+
+        // Try multiple source variants to match backend case sensitivity
+        const sourceVariants = ['video merge app', 'Video Merge App', 'VIDEO MERGE APP'];
+        let apiTemplates = [];
+
+        // 1) source + admin + branch
+        for (const src of sourceVariants) {
+          apiTemplates = await fetchTemplates({
+            source: src,
+            adminid: user?.adminid,
+            branchid: user?.branchid
+          });
+          console.log('[VideoTemplates] fetched with source/admin/branch', src, user?.adminid, user?.branchid, 'count:', apiTemplates?.length || 0);
+          if (apiTemplates && apiTemplates.length > 0) {
+            break;
+          }
+        }
+
+        // 2) source only (if first pass empty)
+        if (!apiTemplates || apiTemplates.length === 0) {
+          for (const src of sourceVariants) {
+            apiTemplates = await fetchTemplates({ source: src });
+            console.log('[VideoTemplates] fetched with source only', src, 'count:', apiTemplates?.length || 0);
+            if (apiTemplates && apiTemplates.length > 0) {
+              break;
+            }
+          }
+        }
+
+        // 3) admin/branch only (no source)
+        if (!apiTemplates || apiTemplates.length === 0) {
+          apiTemplates = await fetchTemplates({
+            adminid: user?.adminid,
+            branchid: user?.branchid
+          });
+          console.log('[VideoTemplates] fetched with admin/branch only', user?.adminid, user?.branchid, 'count:', apiTemplates?.length || 0);
+        }
+
+        // 4) no filters at all as final fallback
+        if (!apiTemplates || apiTemplates.length === 0) {
+          apiTemplates = await fetchTemplates();
+          console.log('[VideoTemplates] fetched with no filters, count:', apiTemplates?.length || 0);
+        }
 
         if (apiTemplates && apiTemplates.length > 0) {
+          console.log('[VideoTemplates] Raw API response:', JSON.stringify(apiTemplates, null, 2));
           const transformedTemplates = apiTemplates.flatMap(transformApiTemplate);
-          setVideoTemplates(transformedTemplates);
-          setHasVideoTemplates(true);
-          // Set first template as selected if available
+          console.log('[VideoTemplates] Transformed templates:', transformedTemplates.length, JSON.stringify(transformedTemplates, null, 2));
+          
           if (transformedTemplates.length > 0) {
+            setVideoTemplates(transformedTemplates);
+            setHasVideoTemplates(true);
+            // Set first template as selected if available
+            console.log('[VideoTemplates] Setting selected template:', transformedTemplates[0]);
             setSelectedVideoTemplate(transformedTemplates[0]);
+            console.log('[VideoTemplates] State updated - hasVideoTemplates: true, templates count:', transformedTemplates.length);
+          } else {
+            console.warn('[VideoTemplates] Templates found but transformation resulted in empty array');
+            setHasVideoTemplates(false);
           }
         } else {
           // If no video templates from API, show alert
+          console.log('[VideoTemplates] No templates found, setting hasVideoTemplates to false');
           setHasVideoTemplates(false);
           Alert.alert(
             'No Video Templates Found',
@@ -1492,7 +1545,17 @@ export default function CameraScreen({ navigation, route }) {
 
   // Toggle slow motion during recording
   const toggleSlowMotionDuringRecording = () => {
-    if (!isRecording || !recordingStartTimeRef.current) return;
+    console.log('[Recording] Toggle slow motion called', {
+      isRecording,
+      hasRecordingStartTime: !!recordingStartTimeRef.current,
+      isSlowMotionActive,
+      currentSegments: slowMotionSegmentsRef.current.length
+    });
+    
+    if (!isRecording || !recordingStartTimeRef.current) {
+      console.warn('[Recording] Cannot toggle slow motion - not recording or no start time');
+      return;
+    }
     
     const currentTime = Date.now();
     const elapsedSeconds = (currentTime - recordingStartTimeRef.current) / 1000;
@@ -1503,21 +1566,27 @@ export default function CameraScreen({ navigation, route }) {
         const updated = [...prev];
         if (updated.length > 0 && updated[updated.length - 1].end === null) {
           updated[updated.length - 1].end = elapsedSeconds;
+          console.log(`[Recording] Closing segment: ${updated[updated.length - 1].start.toFixed(2)}s - ${elapsedSeconds.toFixed(2)}s`);
+        } else {
+          console.warn('[Recording] No open segment to close');
         }
         slowMotionSegmentsRef.current = updated; // Update ref
+        console.log('[Recording] Updated segments (ref):', slowMotionSegmentsRef.current);
         return updated;
       });
       setIsSlowMotionActive(false);
-      console.log(`[Recording] Slow motion ended at ${elapsedSeconds.toFixed(2)}s`);
+      console.log(`[Recording] ✓ Slow motion ended at ${elapsedSeconds.toFixed(2)}s`);
     } else {
       // Starting slow motion segment
       setSlowMotionSegments(prev => {
         const updated = [...prev, { start: elapsedSeconds, end: null }];
         slowMotionSegmentsRef.current = updated; // Update ref
+        console.log('[Recording] Added new segment:', { start: elapsedSeconds, end: null });
+        console.log('[Recording] Updated segments (ref):', slowMotionSegmentsRef.current);
         return updated;
       });
       setIsSlowMotionActive(true);
-      console.log(`[Recording] Slow motion started at ${elapsedSeconds.toFixed(2)}s`);
+      console.log(`[Recording] ✓ Slow motion started at ${elapsedSeconds.toFixed(2)}s`);
     }
   };
 
@@ -1538,33 +1607,102 @@ export default function CameraScreen({ navigation, route }) {
         setRecordingDuration(prev => prev + 1);
       }, 1000);
 
+      // Get the camera format FPS for slow motion calculation
+      const cameraFps = videoCameraRef.current?.getFps?.() || 30;
+      recordingFpsRef.current = cameraFps;
+      console.log(`[Recording] Starting video recording at ${cameraFps}fps (slow motion segments can be added during recording)`);
+      
       // Always record at high FPS if available (for slow motion capability)
       // Format is already selected in VideoCameraView - we'll use high FPS format
-      console.log(`[Recording] Starting video recording (slow motion segments can be added during recording)`);
+      // No videoResolution specified - uses format's natural resolution to preserve aspect ratio
       await videoCameraRef.current.startRecording({
         flash: 'off',
         videoCodec: 'h264',
         videoBitRate: 'high', // Use high bitrate for better quality
+        // Don't specify videoResolution - let it use the format's natural dimensions
+        // This preserves portrait/landscape aspect ratio as recorded
         onRecordingFinished: (video) => {
           const videoPath = `file://${video.path}`;
+          
+          // Calculate actual recording duration from start time
+          const actualDuration = recordingStartTimeRef.current 
+            ? (Date.now() - recordingStartTimeRef.current) / 1000 
+            : (recordingDuration || 0);
+          
+          // Log video dimensions to verify orientation
+          const videoWidth = video.width || 'unknown';
+          const videoHeight = video.height || 'unknown';
+          const videoOrientation = videoWidth !== 'unknown' && videoHeight !== 'unknown' 
+            ? (videoHeight > videoWidth ? 'Portrait' : 'Landscape')
+            : 'unknown';
+          const videoAspectRatio = videoWidth !== 'unknown' && videoHeight !== 'unknown'
+            ? (videoWidth / videoHeight).toFixed(2)
+            : 'unknown';
+          
+          console.log('[CameraScreen] Recording finished - Video info:', {
+            dimensions: `${videoWidth}x${videoHeight}`,
+            orientation: videoOrientation,
+            aspectRatio: videoAspectRatio,
+            duration: video.duration || 'unknown',
+            path: video.path
+          });
           
           // Use ref to get latest segments (always up-to-date)
           const currentSegments = slowMotionSegmentsRef.current.length > 0 
             ? slowMotionSegmentsRef.current 
             : slowMotionSegments; // Fallback to state if ref is empty
           
-          // Close any open slow motion segments
-          const finalSegments = [...currentSegments];
-          if (finalSegments.length > 0 && finalSegments[finalSegments.length - 1].end === null) {
-            finalSegments[finalSegments.length - 1].end = recordingDuration;
-          }
+          console.log('[CameraScreen] Recording finished - Raw data:', {
+            refSegments: slowMotionSegmentsRef.current,
+            stateSegments: slowMotionSegments,
+            currentSegments: currentSegments,
+            recordingDurationState: recordingDuration,
+            actualDuration: actualDuration,
+            videoDuration: video.duration || 'unknown'
+          });
+          
+          // Close any open slow motion segments and validate them
+          const finalSegments = [...currentSegments]
+            .map(seg => {
+              // Ensure start is valid
+              if (seg.start === null || seg.start === undefined || isNaN(seg.start)) {
+                console.warn('[CameraScreen] Invalid segment start:', seg);
+                return null;
+              }
+              
+              // Close open segments - use actual duration or video duration
+              let end = seg.end;
+              if (end === null || end === undefined) {
+                // Use actual calculated duration or video duration if available
+                end = video.duration ? video.duration / 1000 : actualDuration;
+                console.log(`[CameraScreen] Closing open segment: ${seg.start.toFixed(2)}s - ${end.toFixed(2)}s`);
+              }
+              
+              // Validate end time
+              if (end === null || end === undefined || isNaN(end)) {
+                end = actualDuration; // Default to actual duration
+              }
+              
+              // Ensure end is after start
+              if (end <= seg.start) {
+                console.warn('[CameraScreen] Invalid segment: end <= start, skipping:', { start: seg.start, end });
+                return null;
+              }
+              
+              // Don't clamp to duration - use actual end time
+              return {
+                start: Math.max(0, seg.start),
+                end: end
+              };
+            })
+            .filter(seg => seg !== null && seg.start < seg.end); // Remove invalid segments
           
           const hasSlowMotionSegments = finalSegments.length > 0;
           
           console.log('[CameraScreen] Recording finished. Slow motion segments:', finalSegments);
-          console.log('[CameraScreen] Recording duration:', recordingDuration);
-          console.log('[CameraScreen] Segments from ref:', slowMotionSegmentsRef.current);
-          console.log('[CameraScreen] Segments from state:', slowMotionSegments);
+          console.log('[CameraScreen] Recording duration (state):', recordingDuration);
+          console.log('[CameraScreen] Actual duration (calculated):', actualDuration);
+          console.log('[CameraScreen] Validated segments count:', finalSegments.length);
           
           setVideoUri(videoPath);
           setCapturedVideo({
@@ -1574,6 +1712,10 @@ export default function CameraScreen({ navigation, route }) {
             isSlowMotion: hasSlowMotionSegments || videoSpeed === 'slow',
             videoSpeed: hasSlowMotionSegments ? 'slow' : videoSpeed,
             slowMotionSegments: finalSegments,
+            recordingFps: recordingFpsRef.current, // Store the FPS used for recording
+            width: videoWidth !== 'unknown' ? videoWidth : undefined,
+            height: videoHeight !== 'unknown' ? videoHeight : undefined,
+            orientation: videoOrientation !== 'unknown' ? videoOrientation : undefined,
           });
           setShowVideoPreview(true);
           setIsRecording(false);
@@ -2131,22 +2273,24 @@ export default function CameraScreen({ navigation, route }) {
             <Text style={styles.permissionText}>Loading...</Text>
           </View>
         ) : accessType === 'videomerge' ? (
-          hasVideoTemplates ? renderVideoContent() : (
-            <View style={styles.permissionContainer}>
-              {videoTemplatesLoading ? (
-                <>
-                  <ActivityIndicator size="large" color="#fff" />
-                  <Text style={styles.permissionText}>Loading video templates...</Text>
-                </>
-              ) : (
-                <>
-                  <Icon name="video-library" size={80} color="#fff" />
-                  <Text style={styles.permissionText}>No Video Templates Available</Text>
-                  <Text style={styles.permissionSubText}>
-                    Please contact your admin to create video templates for your branch.
-                  </Text>
-                  <TouchableOpacity
-                    style={styles.permissionButton}
+          (() => {
+            console.log('[VideoTemplates] Render check - hasVideoTemplates:', hasVideoTemplates, 'videoTemplates.length:', videoTemplates.length, 'loading:', videoTemplatesLoading);
+            return hasVideoTemplates ? renderVideoContent() : (
+              <View style={styles.permissionContainer}>
+                {videoTemplatesLoading ? (
+                  <>
+                    <ActivityIndicator size="large" color="#fff" />
+                    <Text style={styles.permissionText}>Loading video templates...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Icon name="video-library" size={80} color="#fff" />
+                    <Text style={styles.permissionText}>No Video Templates Available</Text>
+                    <Text style={styles.permissionSubText}>
+                      Please contact your admin to create video templates for your branch.
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.permissionButton}
                     onPress={() => navigation.navigate('Login')}
                   >
                     <Text style={styles.permissionButtonText}>Go Back</Text>
@@ -2154,7 +2298,8 @@ export default function CameraScreen({ navigation, route }) {
                 </>
               )}
             </View>
-          )
+          );
+          })()
         ) : renderCameraContent()}
 
         {/* Top controls - Only show if we have camera permission */}
@@ -2184,7 +2329,7 @@ export default function CameraScreen({ navigation, route }) {
             <TemplateSlider templates={templates} onSelect={setTemplate} />
           ) : (
             <View style={styles.loaderContainer}>
-              <Text style={styles.loaderText}>No templates found</Text>
+         
             </View>
           )}
         </View>
@@ -2200,6 +2345,10 @@ export default function CameraScreen({ navigation, route }) {
       {/* Capture button and controls - Only show if we have camera permission */}
       {hasCameraPermission && (
         <View style={styles.bottomControls}>
+          {(() => {
+            console.log('[UI] Rendering controls - accessType:', accessType, 'hasCameraPermission:', hasCameraPermission);
+            return null;
+          })()}
           {accessType !== null && accessType === 'photomerge' ? (
             <>
               <TouchableOpacity
@@ -2263,8 +2412,12 @@ export default function CameraScreen({ navigation, route }) {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.sideButton}
+                style={[
+                  styles.sideButton,
+                  isRecording && isSlowMotionActive && { backgroundColor: 'rgba(255, 59, 48, 0.4)' }
+                ]}
                 onPress={() => {
+                  console.log('[UI] Slow motion button pressed', { isRecording, isSlowMotionActive });
                   if (isRecording) {
                     // Toggle slow motion during recording
                     toggleSlowMotionDuringRecording();
@@ -2273,15 +2426,18 @@ export default function CameraScreen({ navigation, route }) {
                     setVideoSpeed(videoSpeed === 'normal' ? 'slow' : 'normal');
                   }
                 }}
+                disabled={!isRecording && !cameraReady}
               >
-                <View style={{ alignItems: 'center' }}>
                   <MaterialCommunityIcons 
                     name={(isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow') ? 'speedometer' : 'speedometer-slow'} 
                     size={28} 
                     color={(isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow') ? '#ff3b30' : '#000'} 
                   />
                   {((isRecording && isSlowMotionActive) || (!isRecording && videoSpeed === 'slow')) && (
-                    <Text style={{ fontSize: 10, color: '#ff3b30', marginTop: 2 }}>SLOMO</Text>
+                    <Text style={{ fontSize: 10, color: '#000', marginTop: 2, fontWeight: 'bold' }}>SLOMO</Text>
+                  )}
+                  {!isRecording && videoSpeed === 'normal' && (
+                    <Text style={{ fontSize: 10, color: '#000', marginTop: 2, opacity: 0.7 }}>SLOMO</Text>
                   )}
                   {isRecording && slowMotionSegments.length > 0 && (
                     <View style={{ 
@@ -2300,7 +2456,7 @@ export default function CameraScreen({ navigation, route }) {
                       </Text>
                     </View>
                   )}
-                </View>
+               
               </TouchableOpacity>
               {/* <View style={styles.sideButton} /> */}
             </>
@@ -2317,7 +2473,20 @@ export default function CameraScreen({ navigation, route }) {
               uri={videoUri}
               style={{ flex: 1 }}
               isSlowMotion={videoSpeed === 'slow' && (!capturedVideo?.slowMotionSegments || capturedVideo.slowMotionSegments.length === 0)}
-              slowMotionSegments={capturedVideo?.slowMotionSegments || []}
+              slowMotionSegments={(() => {
+                const segments = capturedVideo?.slowMotionSegments || [];
+                console.log('[CameraScreen] Passing segments to VideoPlayer:', {
+                  segmentsCount: segments.length,
+                  segments: segments,
+                  recordingFps: capturedVideo?.recordingFps || 30,
+                  capturedVideo: capturedVideo ? {
+                    hasSlowMotionSegments: !!capturedVideo.slowMotionSegments,
+                    slowMotionSegmentsLength: capturedVideo.slowMotionSegments?.length || 0
+                  } : null
+                });
+                return segments;
+              })()}
+              recordingFps={capturedVideo?.recordingFps || 30}
             />
             {/* Slow motion badge */}
             {(videoSpeed === 'slow' || (capturedVideo?.slowMotionSegments && capturedVideo.slowMotionSegments.length > 0)) && (
