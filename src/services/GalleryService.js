@@ -11,5 +11,4 @@ export const saveToGallery = async (filePath, fileType = 'photo') => {
     type: fileType,
   });
   
-  console.log(`[GalleryService] Saved ${fileType} to gallery with original dimensions: ${filePath}`);
 };

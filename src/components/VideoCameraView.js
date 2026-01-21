@@ -39,13 +39,6 @@ const VideoCameraView = forwardRef(
         return Math.abs(ratio - 1.78) < 0.1 || Math.abs(ratio - 0.56) < 0.1;
       };
 
-      // Log all available formats for debugging
-      const allPortraitFormats = device.formats.filter(isPortrait);
-      const allLandscapeFormats = device.formats.filter(f => !isPortrait(f));
-      console.log(`[VideoCamera] Available formats: ${device.formats.length} total, ${allPortraitFormats.length} portrait, ${allLandscapeFormats.length} landscape`);
-      if (allPortraitFormats.length > 0) {
-        console.log(`[VideoCamera] Portrait formats sample:`, allPortraitFormats.slice(0, 3).map(f => `${f.videoWidth}x${f.videoHeight} @ ${f.maxFps}fps`));
-      }
 
       // First, try to find high FPS formats (120fps+) for slow motion capability
       const highFpsFormats = device.formats.filter(f => f.maxFps >= 120);
@@ -66,10 +59,6 @@ const VideoCameraView = forwardRef(
           return bRes - aRes;
         })[0];
         formatRef.current = selectedFormat;
-        const aspectRatio = getAspectRatio(selectedFormat).toFixed(2);
-        const orientation = isPortrait(selectedFormat) ? 'Portrait' : 'Landscape';
-        console.log(`[VideoCamera] Selected high FPS format: ${selectedFormat.videoWidth}x${selectedFormat.videoHeight} @ ${selectedFormat.maxFps}fps (${orientation}, ${aspectRatio}:1) - slow motion enabled`);
-        console.log(`[VideoCamera] Note: outputOrientation="device" will record in actual device orientation`);
         return selectedFormat;
       }
 
@@ -88,10 +77,6 @@ const VideoCameraView = forwardRef(
         return bRes - aRes;
       })[0];
       formatRef.current = highestFpsFormat;
-      const aspectRatio = getAspectRatio(highestFpsFormat).toFixed(2);
-      const orientation = isPortrait(highestFpsFormat) ? 'Portrait' : 'Landscape';
-      console.log(`[VideoCamera] Selected format: ${highestFpsFormat.videoWidth}x${highestFpsFormat.videoHeight} @ ${highestFpsFormat.maxFps}fps (${orientation}, ${aspectRatio}:1)`);
-      console.log(`[VideoCamera] Note: outputOrientation="device" will record in actual device orientation`);
       return highestFpsFormat;
     }, [device]);
 

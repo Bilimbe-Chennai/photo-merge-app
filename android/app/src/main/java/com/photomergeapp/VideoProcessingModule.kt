@@ -45,7 +45,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
                     return@execute
                 }
 
-                Log.d("VideoProcessing", "Processing video with ${segments.size()} slow motion segments")
                 
                 // Parse segments
                 val slowMotionSegments = mutableListOf<Pair<Double, Double>>()
@@ -131,7 +130,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
                 allParts.add(VideoPart(currentTime, durationSeconds, false))
             }
             
-            Log.d("VideoProcessing", "Processing ${allParts.size} parts")
             
             // Read orientation from input video metadata
             var orientation = 0
@@ -144,12 +142,10 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
                 val rotationStr = metadataRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
                 if (rotationStr != null) {
                     orientation = rotationStr.toIntOrNull() ?: 0
-                    Log.d("VideoProcessing", "Found rotation in metadata: $orientation degrees")
                 } else {
                     // Check if orientation is in the video format as fallback
                     if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
                         orientation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
-                        Log.d("VideoProcessing", "Found orientation in format: $orientation degrees")
                     }
                 }
             } catch (e: Exception) {
@@ -165,7 +161,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
             if (orientation != 0) {
                 try {
                     muxer.setOrientationHint(orientation)
-                    Log.d("VideoProcessing", "Set orientation hint on muxer: $orientation degrees")
                 } catch (e: Exception) {
                     Log.w("VideoProcessing", "Could not set orientation hint: ${e.message}")
                 }
@@ -224,7 +219,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
                 val partDurationUs = endTimeUs - startTimeUs
                 outputVideoTime += if (part.isSlow) (partDurationUs * 4) else partDurationUs
                 
-                Log.d("VideoProcessing", "Video part: ${part.start}s-${part.end}s (${if (part.isSlow) "SLOW" else "NORMAL"}), frames: $frameCount")
             }
             
             // Process audio track if available
@@ -271,7 +265,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
                     val partDurationUs = endTimeUs - startTimeUs
                     outputAudioTime += if (part.isSlow) (partDurationUs * 4) else partDurationUs
                     
-                    Log.d("VideoProcessing", "Audio part: ${part.start}s-${part.end}s, samples: $sampleCount")
                 }
             }
             
@@ -281,7 +274,6 @@ class VideoProcessingModule(reactContext: ReactApplicationContext) : ReactContex
             
             val outputFile = File(outputPath)
             if (outputFile.exists() && outputFile.length() > 0) {
-                Log.d("VideoProcessing", "✓ Video processing completed: ${outputFile.length()} bytes")
                 promise.resolve(outputPath)
             } else {
                 promise.reject("PROCESSING_ERROR", "Output file was not created or is empty")
